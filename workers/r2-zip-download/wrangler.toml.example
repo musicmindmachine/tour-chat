@@ -1,0 +1,11 @@
+name = "drop-tuning-box-zip-download"
+main = "src/index.ts"
+compatibility_date = "2026-02-21"
+
+# Optional (Workers Paid only): increase CPU for large ZIP streaming requests.
+# [limits]
+# cpu_ms = 300000
+
+[[r2_buckets]]
+binding = "FILES_BUCKET"
+bucket_name = "replace-with-your-bucket"

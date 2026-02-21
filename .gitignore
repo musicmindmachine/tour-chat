@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Ignored for the template, you probably want to remove it:
+package-lock.json
+
+# local Cloudflare worker config with account-specific bindings
+workers/r2-zip-download/wrangler.toml

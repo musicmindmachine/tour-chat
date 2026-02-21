@@ -1,36 +1,153 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Drop Tuning Box
 
-## Getting Started
+Basic Dropbox-style shared file storage with:
 
-First, run the development server:
+- Next.js + `shadcn/ui` frontend
+- Convex backend/database
+- ConvexAuth (email magic links via Resend)
+- Convex R2 component for signed uploads + signed downloads
+
+## What this app does
+
+- `/signin`: sign in with email magic link
+- `/`: shared file list (all uploaded files/directories)
+- `/account`: basic account management (display name, email, sign out)
+
+## 1) Install and initialize
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev:backend
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The first `convex dev` run will create `.env.local` with values like:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `CONVEX_DEPLOYMENT`
+- `NEXT_PUBLIC_CONVEX_URL`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Then run the frontend:
 
-## Learn More
+```bash
+pnpm dev:frontend
+```
 
-To learn more about Next.js, take a look at the following resources:
+Or run both together:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 2) ConvexAuth + Resend setup (magic links)
 
-## Deploy on Vercel
+This project uses only the Resend provider in `/Users/ecstipan/Downloads/drop-tuning-box/convex/auth.ts`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Set Convex environment variables:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx convex env set AUTH_RESEND_KEY re_xxxxxxxxxxxxx
+npx convex env set AUTH_RESEND_FROM "Drop Tuning Box <onboarding@resend.dev>"
+npx convex env set SITE_URL http://localhost:3000
+```
+
+Notes:
+
+- `AUTH_RESEND_KEY` is required.
+- `AUTH_RESEND_FROM` is optional. Use `onboarding@resend.dev` for testing, or your verified domain sender in production.
+- `SITE_URL` is required by ConvexAuth redirects. In production set it to your app origin (for example `https://app.yourdomain.com`).
+- Resend test mode only sends to your own Resend account address. To send to other users, verify a domain in Resend and set `AUTH_RESEND_FROM` to that domain.
+- ConvexAuth also requires JWT signing keys. If you ever see `Missing environment variable JWT_PRIVATE_KEY`, run:
+  - `npx @convex-dev/auth --skip-git-check`
+  This sets `JWT_PRIVATE_KEY` and `JWKS` on your Convex deployment.
+
+Auth wiring lives in:
+
+- `/Users/ecstipan/Downloads/drop-tuning-box/convex/auth.ts`
+- `/Users/ecstipan/Downloads/drop-tuning-box/convex/auth.config.ts`
+- `/Users/ecstipan/Downloads/drop-tuning-box/convex/http.ts`
+- `/Users/ecstipan/Downloads/drop-tuning-box/middleware.ts`
+
+## 3) Cloudflare R2 setup (signed uploads/downloads)
+
+Create an R2 API token with **Object Read & Write** access for your bucket, then set:
+
+```bash
+npx convex env set R2_ACCESS_KEY_ID xxxxxxxxx
+npx convex env set R2_SECRET_ACCESS_KEY xxxxxxxxx
+npx convex env set R2_ENDPOINT https://<account-id>.r2.cloudflarestorage.com
+npx convex env set R2_BUCKET <your-bucket-name>
+```
+
+R2 component wiring lives in:
+
+- `/Users/ecstipan/Downloads/drop-tuning-box/convex/convex.config.ts`
+- `/Users/ecstipan/Downloads/drop-tuning-box/convex/files.ts`
+
+### Optional: ZIP whole folders via Worker streaming
+
+This repo includes a Cloudflare Worker at:
+
+- `/Users/ecstipan/Downloads/drop-tuning-box/workers/r2-zip-download/src/index.ts`
+
+It streams ZIP archives from R2 by prefix so Convex does not hold large archive bytes in memory.
+
+#### Worker setup
+
+```bash
+cp /Users/ecstipan/Downloads/drop-tuning-box/workers/r2-zip-download/wrangler.toml.example /Users/ecstipan/Downloads/drop-tuning-box/workers/r2-zip-download/wrangler.toml
+cd /Users/ecstipan/Downloads/drop-tuning-box/workers/r2-zip-download
+npx wrangler secret put ZIP_DOWNLOAD_TOKEN_SECRET
+npx wrangler deploy
+```
+
+Bind `FILES_BUCKET` in `wrangler.toml` to the same R2 bucket used by Convex.
+If you're on Workers Paid, set `[limits] cpu_ms = 300000` in `wrangler.toml` for larger ZIP requests.
+Workers Free CPU limits are usually too low for on-the-fly ZIP CRC generation.
+
+#### Convex env vars for ZIP downloads
+
+Set the same secret in Convex, plus your deployed Worker endpoint:
+
+```bash
+cd /Users/ecstipan/Downloads/drop-tuning-box
+npx convex env set ZIP_DOWNLOAD_TOKEN_SECRET <same-secret-used-in-worker>
+npx convex env set ZIP_DOWNLOAD_WORKER_URL https://<your-worker-subdomain>.workers.dev/download-zip
+```
+
+The frontend’s **Download ZIP** controls call `api.files.createZipDownloadUrl`, which mints short-lived signed tokens for the Worker.
+You can opt in to recursive ZIPs (include subfolders) or download only direct files in the selected folder.
+
+### R2 CORS policy
+
+Add a CORS policy to your bucket so browser uploads can PUT directly to R2.
+
+Example for local dev:
+
+```json
+[
+  {
+    "AllowedOrigins": ["http://localhost:3000"],
+    "AllowedMethods": ["GET", "PUT"],
+    "AllowedHeaders": ["Content-Type"]
+  }
+]
+```
+
+## 4) Generate Convex types after backend changes
+
+```bash
+pnpm convex codegen
+```
+
+## 5) Run
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Important implementation notes
+
+- Upload URLs are signed by Convex and scoped to the generated object key.
+- File metadata is synced from R2 into Convex and then indexed in the `files` table.
+- Cloudflare R2 encrypts objects at rest by default. This app adds signed URL access control on top.
