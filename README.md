@@ -4,14 +4,15 @@ Basic Dropbox-style shared file storage with:
 
 - Next.js + `shadcn/ui` frontend
 - Convex backend/database
-- ConvexAuth (email magic links via Resend)
+- ConvexAuth (email OTP codes via Resend)
 - Convex R2 component for signed uploads + signed downloads
 
 ## What this app does
 
-- `/signin`: sign in with email magic link
+- `/signin`: sign in with email + one-time password (OTP)
 - `/`: shared file list (all uploaded files/directories)
 - `/account`: basic account management (display name, email, sign out)
+- Admins can manage an email allowlist from the user dropdown
 
 ## 1) Install and initialize
 
@@ -37,7 +38,7 @@ Or run both together:
 pnpm dev
 ```
 
-## 2) ConvexAuth + Resend setup (magic links)
+## 2) ConvexAuth + Resend setup (email OTP)
 
 This project uses only the Resend provider in `/Users/ecstipan/Downloads/drop-tuning-box/convex/auth.ts`.
 
@@ -54,7 +55,10 @@ Notes:
 - `AUTH_RESEND_KEY` is required.
 - `AUTH_RESEND_FROM` is optional. Use `onboarding@resend.dev` for testing, or your verified domain sender in production.
 - `SITE_URL` is required by ConvexAuth redirects. In production set it to your app origin (for example `https://app.yourdomain.com`).
+- Session cookies are now configured to persist for 30 days.
 - Resend test mode only sends to your own Resend account address. To send to other users, verify a domain in Resend and set `AUTH_RESEND_FROM` to that domain.
+- New users must be present in the `emailAllowlist` table before they can complete their first sign-in.
+- The first admin can be bootstrapped by signing in as an existing user when no admins exist yet; after that, only admins can manage the allowlist.
 - ConvexAuth also requires JWT signing keys. If you ever see `Missing environment variable JWT_PRIVATE_KEY`, run:
   - `npx @convex-dev/auth --skip-git-check`
   This sets `JWT_PRIVATE_KEY` and `JWKS` on your Convex deployment.

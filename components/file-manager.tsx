@@ -3,10 +3,25 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Progress } from "@/components/ui/progress";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { cn } from "@/lib/utils";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Archive, ChevronRight, Download, Folder, Trash2, Upload } from "lucide-react";
+import {
+  Archive,
+  ChevronRight,
+  Download,
+  Folder,
+  Loader2,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import {
   useMemo,
   useRef,
@@ -26,6 +41,20 @@ type QueuedUpload = SelectedUpload & {
   id: string;
 };
 
+type UploadLifecycleState =
+  | "queued"
+  | "uploading"
+  | "finalizing"
+  | "done"
+  | "failed";
+
+type UploadProgressState = {
+  status: UploadLifecycleState;
+  uploadedBytes: number;
+  totalBytes: number;
+  error?: string;
+};
+
 type CreateUploadUrlFn = (args: {
   fileName: string;
   directory?: string;
@@ -39,6 +68,10 @@ type FinalizeUploadFn = (args: { key: string }) => Promise<null>;
 
 type CommitUploadFn = (args: { key: string }) => Promise<Id<"files">>;
 
+type UploadProgressFn = (uploadedBytes: number, totalBytes: number) => void;
+
+type UploadPhaseFn = () => void;
+
 type FolderPickerAttributes = InputHTMLAttributes<HTMLInputElement> & {
   directory?: string;
   webkitdirectory?: string;
@@ -51,14 +84,18 @@ const folderPickerAttributes: FolderPickerAttributes = {
 
 export function FileManager() {
   const [queuedUploads, setQueuedUploads] = useState<QueuedUpload[]>([]);
-  const [directoryPrefix, setDirectoryPrefix] = useState("");
+  const [uploadProgressById, setUploadProgressById] = useState<
+    Record<string, UploadProgressState>
+  >({});
+  const [uploadPopoverOpen, setUploadPopoverOpen] = useState(false);
+  const directoryPrefix = "";
   const [currentDirectory, setCurrentDirectory] = useState("");
   const [search, setSearch] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<Id<"files"> | null>(null);
-  const [zipPrefix, setZipPrefix] = useState("");
-  const [zipRecursive, setZipRecursive] = useState(false);
+  const [isDeletingPrefix, setIsDeletingPrefix] = useState<string | null>(null);
+  const zipPrefix = "";
   const [isPreparingZip, setIsPreparingZip] = useState(false);
 
   const data = useQuery(api.files.listShared, {
@@ -69,6 +106,7 @@ export function FileManager() {
   const finalizeUpload = useAction(api.files.finalizeUpload);
   const commitUpload = useMutation(api.files.commitUpload);
   const deleteFile = useMutation(api.files.deleteFile);
+  const deletePrefix = useMutation(api.files.deletePrefix);
   const createZipDownloadUrl = useMutation(api.files.createZipDownloadUrl);
 
   const filePickerRef = useRef<HTMLInputElement>(null);
@@ -99,10 +137,55 @@ export function FileManager() {
     }
 
     const searchText = search.trim().toLowerCase();
-    return data.files.filter((file) =>
-      file.name.toLowerCase().includes(searchText),
-    );
+    return data.files.filter((file) => file.name.toLowerCase().includes(searchText));
   }, [data, search]);
+
+  const uploadSummary = useMemo(() => {
+    const totalFiles = queuedUploads.length;
+    if (totalFiles === 0) {
+      return {
+        totalFiles: 0,
+        remainingFiles: 0,
+        totalBytes: 0,
+        remainingBytes: 0,
+        overallPercent: 0,
+      };
+    }
+
+    let remainingFiles = 0;
+    let totalBytes = 0;
+    let remainingBytes = 0;
+
+    for (const item of queuedUploads) {
+      const progress =
+        uploadProgressById[item.id] ?? buildInitialUploadProgress(item.file.size);
+      const total = progress.totalBytes || item.file.size;
+      const uploaded = Math.min(progress.uploadedBytes, total);
+
+      totalBytes += total;
+
+      if (progress.status === "done") {
+        continue;
+      }
+
+      remainingFiles += 1;
+      if (progress.status === "uploading" || progress.status === "finalizing") {
+        remainingBytes += Math.max(total - uploaded, 0);
+      } else {
+        remainingBytes += total;
+      }
+    }
+
+    const completedBytes = Math.max(totalBytes - remainingBytes, 0);
+
+    return {
+      totalFiles,
+      remainingFiles,
+      totalBytes,
+      remainingBytes,
+      overallPercent: totalBytes > 0 ? (completedBytes / totalBytes) * 100 : 0,
+    };
+  }, [queuedUploads, uploadProgressById]);
 
   function addToQueue(nextUploads: SelectedUpload[]) {
     const normalized = nextUploads
@@ -122,6 +205,24 @@ export function FileManager() {
     }
 
     setQueuedUploads((current) => mergeQueuedUploads(current, normalized));
+    setUploadProgressById((current) => {
+      const next = { ...current };
+      for (const item of normalized) {
+        if (!next[item.id]) {
+          next[item.id] = buildInitialUploadProgress(item.file.size);
+        }
+      }
+      return next;
+    });
+    setUploadPopoverOpen(true);
+  }
+
+  function clearQueue() {
+    if (isUploading) {
+      return;
+    }
+    setQueuedUploads([]);
+    setUploadProgressById({});
   }
 
   function handlePickerChange(event: ChangeEvent<HTMLInputElement>) {
@@ -167,6 +268,7 @@ export function FileManager() {
       return;
     }
 
+    setUploadPopoverOpen(true);
     setIsUploading(true);
     try {
       const batch = [...queuedUploads];
@@ -177,25 +279,87 @@ export function FileManager() {
       let firstFailure = "";
       let nextIndex = 0;
 
+      setUploadProgressById((current) => {
+        const next = { ...current };
+        for (const item of batch) {
+          next[item.id] = buildInitialUploadProgress(item.file.size);
+        }
+        return next;
+      });
+
       const runWorker = async () => {
         while (nextIndex < batch.length) {
           const item = batch[nextIndex];
           nextIndex += 1;
 
           try {
+            setUploadProgressById((current) => ({
+              ...current,
+              [item.id]: {
+                ...(current[item.id] ?? buildInitialUploadProgress(item.file.size)),
+                status: "uploading",
+                totalBytes: item.file.size,
+                error: undefined,
+              },
+            }));
+
             await uploadSingleFile(
               item,
               baseDirectory,
               createUploadUrl,
               finalizeUpload,
               commitUpload,
+              (uploadedBytes, totalBytes) => {
+                setUploadProgressById((current) => ({
+                  ...current,
+                  [item.id]: {
+                    ...(current[item.id] ?? buildInitialUploadProgress(item.file.size)),
+                    status: "uploading",
+                    uploadedBytes: Math.min(uploadedBytes, totalBytes || item.file.size),
+                    totalBytes: totalBytes || item.file.size,
+                    error: undefined,
+                  },
+                }));
+              },
+              () => {
+                setUploadProgressById((current) => ({
+                  ...current,
+                  [item.id]: {
+                    ...(current[item.id] ?? buildInitialUploadProgress(item.file.size)),
+                    status: "finalizing",
+                    error: undefined,
+                  },
+                }));
+              },
             );
+
             successfulCount += 1;
+            setUploadProgressById((current) => ({
+              ...current,
+              [item.id]: {
+                ...(current[item.id] ?? buildInitialUploadProgress(item.file.size)),
+                status: "done",
+                uploadedBytes: item.file.size,
+                totalBytes: item.file.size,
+                error: undefined,
+              },
+            }));
           } catch (error) {
             failedIds.add(item.id);
+            const message = toErrorMessage(error);
             if (!firstFailure) {
-              firstFailure = toErrorMessage(error);
+              firstFailure = message;
             }
+            setUploadProgressById((current) => ({
+              ...current,
+              [item.id]: {
+                ...(current[item.id] ?? buildInitialUploadProgress(item.file.size)),
+                status: "failed",
+                uploadedBytes: 0,
+                totalBytes: item.file.size,
+                error: message,
+              },
+            }));
           }
         }
       };
@@ -204,11 +368,24 @@ export function FileManager() {
 
       if (failedIds.size > 0) {
         setQueuedUploads(batch.filter((item) => failedIds.has(item.id)));
+        setUploadProgressById((current) => {
+          const next: Record<string, UploadProgressState> = {};
+          for (const item of batch) {
+            if (!failedIds.has(item.id)) {
+              continue;
+            }
+            next[item.id] =
+              current[item.id] ?? buildInitialUploadProgress(item.file.size, "failed");
+          }
+          return next;
+        });
         toast.error(
           `Uploaded ${successfulCount}/${batch.length}. ${failedIds.size} failed. ${firstFailure}`,
         );
       } else {
         setQueuedUploads([]);
+        setUploadProgressById({});
+        setUploadPopoverOpen(false);
         toast.success(
           `Uploaded ${successfulCount} file${successfulCount === 1 ? "" : "s"}.`,
         );
@@ -234,26 +411,58 @@ export function FileManager() {
     }
   }
 
-  async function handleDownloadZip(options?: {
-    prefix?: string;
-    recursive?: boolean;
-  }) {
+  async function handleDeletePrefix(prefix: string) {
+    const normalizedPrefix = normalizeDirectoryPrefix(prefix);
+    if (!normalizedPrefix) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete all files under "${normalizedPrefix}"? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingPrefix(normalizedPrefix);
+    try {
+      const result = await deletePrefix({ prefix: normalizedPrefix });
+      if (result.deletedCount === 0) {
+        toast.success(`"${normalizedPrefix}" is already empty.`);
+      } else {
+        toast.success(
+          `Deleted ${result.deletedCount} file${result.deletedCount === 1 ? "" : "s"} from ${result.prefix}.`,
+        );
+      }
+
+      if (
+        currentDirectory === normalizedPrefix ||
+        currentDirectory.startsWith(`${normalizedPrefix}/`)
+      ) {
+        setCurrentDirectory(getParentDirectoryPath(normalizedPrefix));
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(`Folder delete failed: ${toErrorMessage(error)}`);
+    } finally {
+      setIsDeletingPrefix(null);
+    }
+  }
+
+  async function handleDownloadZip(prefixOverride?: string) {
     if (isPreparingZip) {
       return;
     }
 
     setIsPreparingZip(true);
     try {
-      const prefix = normalizeDirectoryPrefix(options?.prefix ?? zipPrefix);
-      const recursive = options?.recursive ?? zipRecursive;
+      const prefix = normalizeDirectoryPrefix(prefixOverride ?? zipPrefix);
       const result = await createZipDownloadUrl({
         prefix: prefix || undefined,
-        recursive,
+        recursive: true,
       });
       window.location.assign(result.downloadUrl);
-      toast.success(
-        `Starting ${result.filename}${recursive ? " (recursive)" : " (current folder only)"}`,
-      );
+      toast.success(`Starting ${result.filename}`);
     } catch (error) {
       console.error(error);
       toast.error(`Could not prepare ZIP: ${toErrorMessage(error)}`);
@@ -268,118 +477,206 @@ export function FileManager() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Upload files and folders</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <input
-            ref={filePickerRef}
-            className="hidden"
-            type="file"
-            multiple
-            onChange={handlePickerChange}
-          />
-          <input
-            ref={folderPickerRef}
-            className="hidden"
-            type="file"
-            multiple
-            onChange={handlePickerChange}
-            {...folderPickerAttributes}
-          />
-          <Input
-            value={directoryPrefix}
-            onChange={(event) => setDirectoryPrefix(event.target.value)}
-            placeholder="Optional path prefix, e.g. designs/mockups"
-            disabled={isUploading}
-          />
-          <div
-            className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
-              isDragActive
-                ? "border-primary bg-primary/5"
-                : "border-muted-foreground/30 bg-muted/20"
-            }`}
-            onDragEnter={handleDropZoneDrag}
-            onDragOver={handleDropZoneDrag}
-            onDragLeave={() => setIsDragActive(false)}
-            onDrop={(event) => void handleDropZoneDrop(event)}
-          >
-            <p className="text-sm font-medium">
-              Drag files or folders here, or use the picker buttons.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Folder structure is preserved when uploaded to R2.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
+    <div className="space-y-4">
+      <input
+        ref={filePickerRef}
+        className="hidden"
+        type="file"
+        multiple
+        onChange={handlePickerChange}
+      />
+      <input
+        ref={folderPickerRef}
+        className="hidden"
+        type="file"
+        multiple
+        onChange={handlePickerChange}
+        {...folderPickerAttributes}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Shared files</h1>
+          <p className="text-sm text-muted-foreground">
+            Dropbox-style file browsing with folder uploads, ZIP downloads, and prefix
+            cleanup.
+          </p>
+        </div>
+
+        <Popover
+          open={uploadPopoverOpen}
+          onOpenChange={(nextOpen) => {
+            if (isUploading && !nextOpen) {
+              return;
+            }
+            setUploadPopoverOpen(nextOpen);
+          }}
+        >
+          <PopoverTrigger asChild>
+            <Button>
+              {isUploading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              {isUploading ? "Uploading..." : "Upload"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[min(92vw,34rem)] space-y-3 p-4">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold">Upload files and folders</h2>
+              <p className="text-xs text-muted-foreground">
+                Drag files or folders in, then upload with preserved paths.
+              </p>
+            </div>
+
+            {/* <Input
+              value={directoryPrefix}
+              onChange={(event) => setDirectoryPrefix(event.target.value)}
+              placeholder="Optional path prefix, e.g. designs/mockups"
               disabled={isUploading}
-              onClick={() => filePickerRef.current?.click()}
+            /> */}
+
+            <div
+              className={cn(
+                "rounded-lg border-2 border-dashed p-4 text-center transition-colors",
+                isDragActive
+                  ? "border-primary bg-primary/5"
+                  : "border-muted-foreground/30 bg-muted/20",
+              )}
+              onDragEnter={handleDropZoneDrag}
+              onDragOver={handleDropZoneDrag}
+              onDragLeave={() => setIsDragActive(false)}
+              onDrop={(event) => void handleDropZoneDrop(event)}
             >
-              Choose files
-            </Button>
+              <p className="text-xs font-medium">
+                Drop files and folders here, or choose from the picker.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isUploading}
+                onClick={() => filePickerRef.current?.click()}
+              >
+                Choose files
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isUploading}
+                onClick={() => folderPickerRef.current?.click()}
+              >
+                Choose folder
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isUploading || queuedUploads.length === 0}
+                onClick={clearQueue}
+              >
+                Clear queue
+              </Button>
+            </div>
+
+            {queuedUploads.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No files queued yet.</p>
+            ) : (
+              <div className="space-y-2">
+                <div className="rounded-md border bg-muted/30 p-2">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span>
+                      {uploadSummary.remainingFiles} / {uploadSummary.totalFiles} files left
+                    </span>
+                    <span>
+                      {formatBytes(uploadSummary.remainingBytes)} / {formatBytes(uploadSummary.totalBytes)}
+                    </span>
+                  </div>
+                  <Progress value={uploadSummary.overallPercent} className="mt-2 h-2" />
+                </div>
+
+                <div className="max-h-64 space-y-2 overflow-auto pr-1">
+                  {queuedUploads.map((item) => {
+                    const progress =
+                      uploadProgressById[item.id] ??
+                      buildInitialUploadProgress(item.file.size);
+                    const statusLabel = uploadStatusLabel(progress.status);
+                    const progressPercent = toProgressPercent(
+                      progress.uploadedBytes,
+                      progress.totalBytes,
+                      progress.status,
+                    );
+                    const uploadedForLabel =
+                      progress.status === "uploading" || progress.status === "finalizing"
+                        ? Math.min(progress.uploadedBytes, progress.totalBytes)
+                        : progress.status === "done"
+                          ? progress.totalBytes
+                          : 0;
+
+                    return (
+                      <div key={item.id} className="rounded-md border bg-background p-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="truncate font-mono text-[11px]">{item.relativePath}</p>
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                              uploadStatusBadgeClasses(progress.status),
+                            )}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                          <span>
+                            {formatBytes(uploadedForLabel)} / {formatBytes(progress.totalBytes)}
+                          </span>
+                          {progress.error ? (
+                            <span className="truncate text-destructive">{progress.error}</span>
+                          ) : null}
+                        </div>
+                        <Progress
+                          value={progressPercent}
+                          className={cn(
+                            "mt-1 h-1.5",
+                            progress.status === "failed" &&
+                              "bg-destructive/20 [&_[data-slot=progress-indicator]]:bg-destructive",
+                          )}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <Button
-              variant="outline"
-              disabled={isUploading}
-              onClick={() => folderPickerRef.current?.click()}
-            >
-              Choose folder
-            </Button>
-            <Button
-              variant="outline"
-              disabled={isUploading || queuedUploads.length === 0}
-              onClick={() => setQueuedUploads([])}
-            >
-              Clear queue
-            </Button>
-            <Button
+              className="w-full"
               disabled={isUploading || queuedUploads.length === 0}
               onClick={() => void handleUpload()}
             >
-              <Upload className="mr-2 h-4 w-4" />
+              {isUploading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
               {isUploading
                 ? "Uploading..."
-                : `Upload ${queuedUploads.length} item${
-                    queuedUploads.length === 1 ? "" : "s"
-                  }`}
+                : `Upload ${queuedUploads.length} item${queuedUploads.length === 1 ? "" : "s"}`}
             </Button>
-          </div>
-          {queuedUploads.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No files queued yet.</p>
-          ) : (
-            <div className="max-h-56 overflow-auto rounded-md border bg-background">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-muted/60 text-left">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Path</th>
-                    <th className="px-3 py-2 font-medium text-right">Size</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {queuedUploads.map((item) => (
-                    <tr key={item.id} className="border-t">
-                      <td className="px-3 py-2 font-mono">{item.relativePath}</td>
-                      <td className="px-3 py-2 text-right">
-                        {formatBytes(item.file.size)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            Uploads are signed with Convex + R2 and synced to a shared file index.
-          </p>
-        </CardContent>
-      </Card>
 
-      <Card>
+            <p className="text-xs text-muted-foreground">
+              Uploads are signed with Convex + R2 and synced to a shared file index.
+            </p>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      <Card className="min-h-[calc(100vh-15rem)]">
         <CardHeader className="space-y-4">
-          <CardTitle>Shared files</CardTitle>
+          <CardTitle>File browser</CardTitle>
+
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
@@ -395,7 +692,7 @@ export function FileManager() {
               <Folder className="mr-2 h-4 w-4" />
               Up
             </Button>
-            <div className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-md border bg-muted/30 px-2 py-1">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-md border bg-muted/30 px-2 py-1">
               {data ? (
                 data.breadcrumbs.map((breadcrumb, index) => (
                   <div
@@ -422,17 +719,19 @@ export function FileManager() {
               )}
             </div>
           </div>
+
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search this folder"
           />
+
           <div className="rounded-lg border bg-muted/20 p-3">
             <p className="mb-2 text-xs text-muted-foreground">
-              Download all files or a specific folder prefix as a ZIP.
+              Folder ZIP downloads are always recursive.
             </p>
             <div className="flex flex-wrap gap-2">
-              <Input
+              {/* <Input
                 value={zipPrefix}
                 onChange={(event) => setZipPrefix(event.target.value)}
                 placeholder="Optional folder prefix, e.g. designs/mockups"
@@ -447,47 +746,20 @@ export function FileManager() {
                 }
               >
                 Use current folder
-              </Button>
-              <Button
-                variant={zipRecursive ? "secondary" : "outline"}
-                disabled={isPreparingZip}
-                onClick={() => setZipRecursive((current) => !current)}
-              >
-                {zipRecursive ? "Recursive on" : "Recursive off"}
-              </Button>
+              </Button> */}
               <Button
                 variant="outline"
                 disabled={isPreparingZip}
-                onClick={() => void handleDownloadZip({})}
+                onClick={() => void handleDownloadZip()}
               >
                 <Archive className="mr-2 h-4 w-4" />
                 {isPreparingZip ? "Preparing..." : "Download ZIP"}
               </Button>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Recursive mode includes nested subfolders. When off, only files directly
-              inside the selected folder are zipped.
-            </p>
           </div>
-          {data && data.directories.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {data.directories.map((directory) => (
-                <Button
-                  key={directory.path}
-                  variant="outline"
-                  size="sm"
-                  disabled={isPreparingZip}
-                  onClick={() => void handleDownloadZip({ prefix: directory.path })}
-                  className="h-7 rounded-full px-3 text-xs"
-                >
-                  <Folder className="h-3 w-3" />
-                  {directory.name}
-                </Button>
-              ))}
-            </div>
-          ) : null}
         </CardHeader>
-        <CardContent>
+
+        <CardContent className="flex h-full flex-col">
           {data === undefined ? (
             <p className="text-sm text-muted-foreground">Loading files...</p>
           ) : filteredDirectories.length + filteredFiles.length === 0 ? (
@@ -499,22 +771,25 @@ export function FileManager() {
                   : "No files yet. Upload the first one."}
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead>
+            <div className="flex-1 overflow-auto rounded-md border bg-background">
+              <table className="w-full min-w-[860px] text-sm">
+                <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-2 font-medium">Name</th>
-                    <th className="pb-2 font-medium">Type</th>
-                    <th className="pb-2 font-medium">Size</th>
-                    <th className="pb-2 font-medium">Uploader</th>
-                    <th className="pb-2 font-medium">Updated</th>
-                    <th className="pb-2 font-medium text-right">Actions</th>
+                    <th className="px-3 py-2 font-medium">Name</th>
+                    <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium">Size</th>
+                    <th className="px-3 py-2 font-medium">Uploader</th>
+                    <th className="px-3 py-2 font-medium">Updated</th>
+                    <th className="px-3 py-2 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredDirectories.map((directory) => (
-                    <tr key={`dir-${directory.path}`} className="border-b align-top">
-                      <td className="py-3 pr-4">
+                    <tr
+                      key={`dir-${directory.path}`}
+                      className="border-b align-top transition-colors hover:bg-muted/30"
+                    >
+                      <td className="px-3 py-3 pr-4">
                         <button
                           type="button"
                           onClick={() => navigateToDirectory(directory.path)}
@@ -524,16 +799,17 @@ export function FileManager() {
                           {directory.name}
                         </button>
                       </td>
-                      <td className="py-3 pr-4">Folder</td>
-                      <td className="py-3 pr-4">-</td>
-                      <td className="py-3 pr-4">-</td>
-                      <td className="py-3 pr-4">-</td>
-                      <td className="py-3 text-right">
+                      <td className="px-3 py-3 pr-4">Folder</td>
+                      <td className="px-3 py-3 pr-4">-</td>
+                      <td className="px-3 py-3 pr-4">-</td>
+                      <td className="px-3 py-3 pr-4">-</td>
+                      <td className="px-3 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => void handleDownloadZip({ prefix: directory.path })}
+                            disabled={isPreparingZip}
+                            onClick={() => void handleDownloadZip(directory.path)}
                           >
                             <Archive className="mr-2 h-4 w-4" />
                             ZIP
@@ -545,20 +821,39 @@ export function FileManager() {
                           >
                             Open
                           </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={isDeletingPrefix === directory.path}
+                            onClick={() => void handleDeletePrefix(directory.path)}
+                          >
+                            {isDeletingPrefix === directory.path ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="mr-2 h-4 w-4" />
+                            )}
+                            {isDeletingPrefix === directory.path
+                              ? "Deleting..."
+                              : "Delete folder"}
+                          </Button>
                         </div>
                       </td>
                     </tr>
                   ))}
+
                   {filteredFiles.map((file) => (
-                    <tr key={file._id} className="border-b align-top">
-                      <td className="py-3 pr-4">{file.name}</td>
-                      <td className="py-3 pr-4">{file.contentType ?? "unknown"}</td>
-                      <td className="py-3 pr-4">{formatBytes(file.size)}</td>
-                      <td className="py-3 pr-4">
+                    <tr
+                      key={file._id}
+                      className="border-b align-top transition-colors hover:bg-muted/30"
+                    >
+                      <td className="px-3 py-3 pr-4">{file.name}</td>
+                      <td className="px-3 py-3 pr-4">{file.contentType ?? "unknown"}</td>
+                      <td className="px-3 py-3 pr-4">{formatBytes(file.size)}</td>
+                      <td className="px-3 py-3 pr-4">
                         {file.uploaderName ?? file.uploaderEmail ?? "Unknown"}
                       </td>
-                      <td className="py-3 pr-4">{formatDate(file.updatedAt)}</td>
-                      <td className="py-3 text-right">
+                      <td className="px-3 py-3 pr-4">{formatDate(file.updatedAt)}</td>
+                      <td className="px-3 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Button variant="outline" size="sm" asChild>
                             <a href={file.downloadUrl} target="_blank" rel="noreferrer">
@@ -576,7 +871,11 @@ export function FileManager() {
                             }
                             onClick={() => void handleDelete(file._id)}
                           >
-                            <Trash2 className="mr-2 h-4 w-4" />
+                            {isDeletingId === file._id ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="mr-2 h-4 w-4" />
+                            )}
                             {isDeletingId === file._id ? "Deleting..." : "Delete"}
                           </Button>
                         </div>
@@ -591,6 +890,78 @@ export function FileManager() {
       </Card>
     </div>
   );
+}
+
+function buildInitialUploadProgress(
+  totalBytes: number,
+  status: UploadLifecycleState = "queued",
+): UploadProgressState {
+  return {
+    status,
+    uploadedBytes: status === "done" ? totalBytes : 0,
+    totalBytes,
+  };
+}
+
+function uploadStatusLabel(status: UploadLifecycleState) {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "uploading":
+      return "Uploading";
+    case "finalizing":
+      return "Finalizing";
+    case "done":
+      return "Done";
+    case "failed":
+      return "Failed";
+    default:
+      return "Queued";
+  }
+}
+
+function uploadStatusBadgeClasses(status: UploadLifecycleState) {
+  switch (status) {
+    case "uploading":
+      return "bg-primary/10 text-primary";
+    case "finalizing":
+      return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    case "done":
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+    case "failed":
+      return "bg-destructive/10 text-destructive";
+    case "queued":
+    default:
+      return "bg-muted text-muted-foreground";
+  }
+}
+
+function toProgressPercent(
+  uploadedBytes: number,
+  totalBytes: number,
+  status: UploadLifecycleState,
+) {
+  if (status === "done") {
+    return 100;
+  }
+  if (status === "queued" || status === "failed") {
+    return 0;
+  }
+  if (!totalBytes) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, (uploadedBytes / totalBytes) * 100));
+}
+
+function getParentDirectoryPath(path: string) {
+  if (!path) {
+    return "";
+  }
+
+  const parts = path.split("/");
+  parts.pop();
+  return parts.join("/");
 }
 
 function formatBytes(size: number | undefined) {
@@ -624,6 +995,8 @@ async function uploadSingleFile(
   createUploadUrl: CreateUploadUrlFn,
   finalizeUpload: FinalizeUploadFn,
   commitUpload: CommitUploadFn,
+  onProgress?: UploadProgressFn,
+  onFinalizeStart?: UploadPhaseFn,
 ) {
   const { fileName, directory } = splitRelativePath(item.relativePath);
   const uploadDirectory = joinDirectory(baseDirectory, directory);
@@ -633,22 +1006,53 @@ async function uploadSingleFile(
     directory: uploadDirectory || undefined,
   });
 
-  const uploadResponse = await fetch(upload.uploadUrl, {
-    method: "PUT",
-    headers: item.file.type
-      ? {
-          "Content-Type": item.file.type,
-        }
-      : undefined,
-    body: item.file,
-  });
-
-  if (!uploadResponse.ok) {
-    throw new Error(`R2 upload failed with status ${uploadResponse.status}`);
-  }
+  await uploadFileWithProgress(upload.uploadUrl, item.file, onProgress);
+  onFinalizeStart?.();
 
   await finalizeUpload({ key: upload.key });
   await commitUpload({ key: upload.key });
+}
+
+async function uploadFileWithProgress(
+  uploadUrl: string,
+  file: File,
+  onProgress?: UploadProgressFn,
+) {
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+
+    if (file.type) {
+      xhr.setRequestHeader("Content-Type", file.type);
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (!onProgress) {
+        return;
+      }
+      const totalBytes = event.lengthComputable ? event.total : file.size;
+      onProgress(Math.min(event.loaded, totalBytes), totalBytes);
+    };
+
+    xhr.onerror = () => {
+      reject(new Error("Network error during upload."));
+    };
+
+    xhr.onabort = () => {
+      reject(new Error("Upload was aborted."));
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(file.size, file.size);
+        resolve();
+        return;
+      }
+      reject(new Error(`R2 upload failed with status ${xhr.status}`));
+    };
+
+    xhr.send(file);
+  });
 }
 
 function mergeQueuedUploads(

@@ -141,6 +141,36 @@ export const deleteFile = mutation({
   },
 });
 
+export const deletePrefix = mutation({
+  args: {
+    prefix: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireAuthenticatedUser(ctx);
+
+    const prefix = normalizeDirectory(args.prefix);
+    if (!prefix) {
+      throw new Error("Folder prefix is required.");
+    }
+
+    const prefixWithSlash = `${prefix}/`;
+    const files = await ctx.db.query("files").collect();
+    const filesToDelete = files.filter(
+      (file) => file.path === prefix || file.path.startsWith(prefixWithSlash),
+    );
+
+    for (const file of filesToDelete) {
+      await r2.deleteObject(ctx, file.key);
+      await ctx.db.delete(file._id);
+    }
+
+    return {
+      prefix,
+      deletedCount: filesToDelete.length,
+    };
+  },
+});
+
 export const listShared = query({
   args: {
     directory: v.optional(v.string()),

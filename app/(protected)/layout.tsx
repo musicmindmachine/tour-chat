@@ -20,7 +20,7 @@ export default async function ProtectedLayout({
   return (
     <div className="min-h-screen bg-muted/20">
       <header className="border-b bg-background/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3">
+        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-2">
             <Link href="/" className="text-lg font-semibold tracking-tight">
               Drop Tuning Box
@@ -40,12 +40,13 @@ export default async function ProtectedLayout({
             <UserMenu
               name={viewer.name ?? viewer.email ?? "Account"}
               email={viewer.email ?? undefined}
+              role={viewer.role}
             />
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
+      <main className="mx-auto w-full max-w-[1400px] px-4 py-8">{children}</main>
     </div>
   );
 }
