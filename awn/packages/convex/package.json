@@ -1,0 +1,25 @@
+{
+  "name": "@awn/convex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "build": "echo 'Run convex deploy after generating _generated files with convex dev.'",
+    "lint": "echo 'No lint configured for @awn/convex'",
+    "typecheck": "echo 'Run pnpm --filter @awn/convex dev first to generate Convex types, then run TypeScript checks.'",
+    "bootstrap:status": "node ./scripts/bootstrap-status.mjs",
+    "bootstrap:admin": "node ./scripts/bootstrap-admin.mjs"
+  },
+  "dependencies": {
+    "@awn/email": "workspace:*",
+    "@convex-dev/expo-push-notifications": "^0.3.1",
+    "@convex-dev/r2": "^0.9.1",
+    "@convex-dev/resend": "^0.2.3",
+    "convex": "^1.32.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}

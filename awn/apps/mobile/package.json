@@ -1,0 +1,32 @@
+{
+  "name": "@awn/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "dev": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "build": "expo export --platform ios && expo export --platform android",
+    "lint": "echo 'No lint configured for @awn/mobile'",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@awn/convex": "workspace:*",
+    "convex": "^1.32.0",
+    "expo": "~54.0.3",
+    "expo-auth-session": "~7.0.10",
+    "expo-device": "~8.0.9",
+    "expo-notifications": "~0.31.4",
+    "expo-secure-store": "~15.0.8",
+    "expo-status-bar": "~3.0.8",
+    "expo-web-browser": "~15.0.10",
+    "react": "19.1.0",
+    "react-native": "0.81.4",
+    "react-native-safe-area-context": "5.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "typescript": "^5.8.2"
+  }
+}
