@@ -25,15 +25,15 @@ function useConvexAuthFromWorkOS() {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  if (!convex) {
-    return <>{children}</>;
-  }
-
   return (
     <AuthKitProvider>
-      <ConvexProviderWithAuthKit client={convex} useAuth={useConvexAuthFromWorkOS}>
-        {children}
-      </ConvexProviderWithAuthKit>
+      {convex ? (
+        <ConvexProviderWithAuthKit client={convex} useAuth={useConvexAuthFromWorkOS}>
+          {children}
+        </ConvexProviderWithAuthKit>
+      ) : (
+        children
+      )}
     </AuthKitProvider>
   );
 }

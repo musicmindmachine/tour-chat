@@ -9,5 +9,5 @@ export default authkitMiddleware({
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/", "/boards/:path*", "/sign-in", "/sign-up", "/auth/callback"],
 };

@@ -4,31 +4,73 @@ import Link from "next/link";
 import type { FunctionReference } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
+import { useSearchParams } from "next/navigation";
 import { api } from "@awn/convex/convex/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { type ChangeEvent, useState } from "react";
+import { type ChangeEvent, useEffect, useState } from "react";
 
 type ConvexApi = {
-  users: { current: FunctionReference<"query"> };
+  users: { current: FunctionReference<"query">; syncCurrentUser: FunctionReference<"mutation"> };
   boards: { list: FunctionReference<"query">; create: FunctionReference<"mutation"> };
 };
 
-export function Dashboard() {
+type DashboardProps = {
+  inviteToken?: string;
+};
+
+export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
   const convexApi = api as ConvexApi;
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
+  const searchParams = useSearchParams();
   const viewer = useQuery(convexApi.users.current);
   const boards = useQuery(convexApi.boards.list);
   const createBoard = useMutation(convexApi.boards.create);
+  const syncCurrentUser = useMutation(convexApi.users.syncCurrentUser);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  const [syncingUser, setSyncingUser] = useState(false);
+
+  const inviteToken = searchParams.get("invite") ?? initialInviteToken;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!user || viewer !== null || syncingUser) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSyncingUser(true);
+
+    void syncCurrentUser({
+      inviteToken: inviteToken ?? undefined,
+    })
+      .catch((error) => {
+        console.error("Failed to sync current user with Convex.", error);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSyncingUser(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken, syncCurrentUser, syncingUser, user, viewer]);
 
   if (viewer === undefined || boards === undefined) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  }
+
+  if (user && (viewer === null || syncingUser)) {
+    return <div className="p-6 text-sm text-muted-foreground">Finishing account setup…</div>;
   }
 
   if (!viewer) {
