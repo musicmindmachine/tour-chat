@@ -9,8 +9,28 @@ import { requireActiveViewer } from "./lib/auth";
 
 const emailFrom = process.env.EMAIL_FROM ?? "Awn <onboarding@resend.dev>";
 const appBaseUrl = process.env.WEB_APP_URL ?? "http://localhost:3000";
+const resendTestMode = parseBooleanEnv(process.env.RESEND_TEST_MODE ?? process.env.TEST_MODE, true);
 
-export const resendClient = new Resend(components.resend, {});
+function parseBooleanEnv(value: string | undefined, fallback: boolean) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
+export const resendClient = new Resend(components.resend, {
+  testMode: resendTestMode,
+});
 const pushNotifications = new PushNotifications<Id<"users">>(components.pushNotifications);
 
 export const recordPushToken = mutation({
