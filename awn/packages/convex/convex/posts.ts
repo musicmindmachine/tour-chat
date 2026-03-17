@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { assertBoardAccess, isBoardModerator, requireActiveViewer } from "./lib/auth";
-import { getBoardReadState, recordBoardReadHead } from "./lib/read-state";
+import { getBoardReadState, recordBoardReadHead } from "./lib/read_state";
 import { extractMentionUsernames, normalizeForSearch } from "./lib/text";
 
 async function enrichPostsForViewer(ctx: any, viewer: any, boardId: any, posts: any[]) {

@@ -6,7 +6,7 @@ import type { FunctionReference } from "convex/server";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { PaginatedQueryReference } from "convex/react";
 import Link from "next/link";
-import { type ChangeEvent, type FormEvent, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@awn/convex/convex/api";
 import { AppNavbar } from "@/components/app/app-navbar";
 import { useAwnViewer } from "@/components/app/use-awn-viewer";
@@ -156,27 +156,27 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
 
   const virtualItems = virtualizer.getVirtualItems();
 
-  const syncLatestReadHead = useEffectEvent(async () => {
-    if (!latestMessage || lastMarkedHeadRef.current === latestMessage._id) {
-      return;
-    }
-
-    try {
-      await markBoardRead({
-        boardId,
-        postId: latestMessage._id,
-      });
-      lastMarkedHeadRef.current = latestMessage._id;
-    } catch (error) {
-      console.error("Failed to sync board read state.", error);
-    }
-  });
-
   useEffect(() => {
     const element = parentRef.current;
     if (!element || !latestMessage) {
       return;
     }
+
+    const syncLatestReadHead = async () => {
+      if (!latestMessage || lastMarkedHeadRef.current === latestMessage._id) {
+        return;
+      }
+
+      try {
+        await markBoardRead({
+          boardId,
+          postId: latestMessage._id,
+        });
+        lastMarkedHeadRef.current = latestMessage._id;
+      } catch (error) {
+        console.error("Failed to sync board read state.", error);
+      }
+    };
 
     if (!didAutoScrollRef.current) {
       didAutoScrollRef.current = true;
@@ -205,9 +205,25 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
       node.scrollTop = node.scrollHeight;
       void syncLatestReadHead();
     });
-  }, [latestMessage?._id, items.length, syncLatestReadHead]);
+  }, [boardId, items.length, latestMessage, markBoardRead]);
 
   useEffect(() => {
+    const syncLatestReadHead = async () => {
+      if (!latestMessage || lastMarkedHeadRef.current === latestMessage._id) {
+        return;
+      }
+
+      try {
+        await markBoardRead({
+          boardId,
+          postId: latestMessage._id,
+        });
+        lastMarkedHeadRef.current = latestMessage._id;
+      } catch (error) {
+        console.error("Failed to sync board read state.", error);
+      }
+    };
+
     const onVisibilityChange = () => {
       const element = parentRef.current;
       if (!element || document.visibilityState !== "visible" || !isNearBottom(element)) {
@@ -221,7 +237,7 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [syncLatestReadHead]);
+  }, [boardId, latestMessage, markBoardRead]);
 
   const onScroll = () => {
     const element = parentRef.current;
@@ -235,7 +251,20 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
     }
 
     if (isNearBottom(element)) {
-      void syncLatestReadHead();
+      if (!latestMessage || lastMarkedHeadRef.current === latestMessage._id) {
+        return;
+      }
+
+      void markBoardRead({
+        boardId,
+        postId: latestMessage._id,
+      })
+        .then(() => {
+          lastMarkedHeadRef.current = latestMessage._id;
+        })
+        .catch((error) => {
+          console.error("Failed to sync board read state.", error);
+        });
     }
   };
 

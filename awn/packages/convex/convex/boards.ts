@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireActiveViewer, requireAdmin, assertBoardAccess } from "./lib/auth";
-import { getBoardReadState, recordBoardReadHead } from "./lib/read-state";
+import { getBoardReadState, recordBoardReadHead } from "./lib/read_state";
 
 function slugify(value: string) {
   return value
