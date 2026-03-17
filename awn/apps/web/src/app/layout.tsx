@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { withAuth } from "@workos-inc/authkit-nextjs";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -7,11 +8,14 @@ export const metadata: Metadata = {
   description: "Invite-only social network message board",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const auth = await withAuth();
+  const { accessToken: _accessToken, ...initialAuth } = auth;
+
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers initialAuth={initialAuth}>{children}</Providers>
       </body>
     </html>
   );
