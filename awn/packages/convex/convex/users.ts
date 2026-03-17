@@ -244,16 +244,35 @@ export const listDirectory = query({
 
         return left.username.localeCompare(right.username);
       })
-      .map((user) => ({
-        _id: user._id,
-        email: viewer.role === "admin" || user._id === viewer._id ? user.email : undefined,
-        username: user.username,
-        role: user.role,
-        status: user.status,
-        approvedAt: user.approvedAt,
-        lastSeenAt: user.lastSeenAt,
-        isSelf: user._id === viewer._id,
-      }));
+      .map((user) => {
+        const directoryEntry: {
+          _id: typeof user._id;
+          username: string;
+          role: typeof user.role;
+          status: typeof user.status;
+          lastSeenAt: number;
+          isSelf: boolean;
+          email?: string;
+          approvedAt?: number;
+        } = {
+          _id: user._id,
+          username: user.username,
+          role: user.role,
+          status: user.status,
+          lastSeenAt: user.lastSeenAt,
+          isSelf: user._id === viewer._id,
+        };
+
+        if (viewer.role === "admin" || user._id === viewer._id) {
+          directoryEntry.email = user.email;
+        }
+
+        if (typeof user.approvedAt === "number") {
+          directoryEntry.approvedAt = user.approvedAt;
+        }
+
+        return directoryEntry;
+      });
   },
 });
 
