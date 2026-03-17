@@ -51,6 +51,8 @@ export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
 
     void syncCurrentUser({
       inviteToken: inviteToken ?? undefined,
+      email: user.email,
+      workosUserId: user.id,
     })
       .catch((error) => {
         console.error("Failed to sync current user with Convex.", error);

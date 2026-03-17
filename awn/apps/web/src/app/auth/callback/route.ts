@@ -45,6 +45,8 @@ export const GET = handleAuth({
     try {
       await client.mutation(convexApi.users.syncCurrentUser, {
         inviteToken: getInviteToken(state),
+        email: user.email,
+        workosUserId: user.id,
       });
     } catch (error) {
       console.error("Convex post-login sync failed.", {

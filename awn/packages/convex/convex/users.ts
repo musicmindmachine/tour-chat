@@ -3,7 +3,6 @@ import { mutation, query } from "./_generated/server";
 import {
   assertValidUsername,
   findUserByWorkosId,
-  getWorkosUserId,
   normalizeEmail,
   requireActiveViewer,
   requireAdmin,
@@ -50,14 +49,33 @@ export const syncCurrentUser = mutation({
   args: {
     inviteToken: v.optional(v.string()),
     requestedUsername: v.optional(v.string()),
+    email: v.optional(v.string()),
+    workosUserId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await requireIdentity(ctx);
-    const workosUserId = getWorkosUserId(identity);
-    const email = normalizeEmail(identity.email ?? "");
+    const identityWorkosUserId = identity.subject ?? identity.tokenIdentifier;
+    const workosUserId = identityWorkosUserId ?? args.workosUserId;
+
+    if (!workosUserId) {
+      throw new Error("WorkOS token is missing a user identifier.");
+    }
+
+    if (identityWorkosUserId && args.workosUserId && args.workosUserId !== identityWorkosUserId) {
+      throw new Error("Provided WorkOS user ID does not match the authenticated identity.");
+    }
+
+    const identityEmail = identity.email ? normalizeEmail(identity.email) : "";
+    const providedEmail = args.email ? normalizeEmail(args.email) : "";
+
+    if (identityEmail && providedEmail && identityEmail !== providedEmail) {
+      throw new Error("Provided email does not match the authenticated identity.");
+    }
+
+    const email = identityEmail || providedEmail;
 
     if (!email) {
-      throw new Error("WorkOS token must include email.");
+      throw new Error("WorkOS user email is required to create an account.");
     }
 
     const now = Date.now();
