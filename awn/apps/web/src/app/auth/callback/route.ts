@@ -3,11 +3,8 @@ import { api } from "@awn/convex/convex/api";
 import { ConvexHttpClient } from "convex/browser";
 import type { FunctionReference } from "convex/server";
 import { NextResponse } from "next/server";
+import { getServerConvexUrl } from "@/lib/convex";
 import { getWorkosBaseUrl } from "@/lib/workos";
-
-function getConvexUrl() {
-  return process.env.CONVEX_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL;
-}
 
 function getInviteToken(state?: string) {
   if (!state) {
@@ -32,10 +29,10 @@ export const GET = handleAuth({
   baseURL: getWorkosBaseUrl(),
   returnPathname: "/",
   onSuccess: async ({ accessToken, state, user }) => {
-    const convexUrl = getConvexUrl();
+    const convexUrl = getServerConvexUrl();
 
     if (!convexUrl) {
-      console.error("Skipping Convex user sync because NEXT_PUBLIC_CONVEX_URL is not set.");
+      console.error("Skipping Convex user sync because no Convex URL is configured.");
       return;
     }
 

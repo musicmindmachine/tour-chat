@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { usePathname } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/app/theme-toggle";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -50,51 +50,72 @@ export function AppNavbar({ viewer }: AppNavbarProps) {
   const links = viewer.status === "active" ? activeLinks : [{ href: "/", label: "Overview" }];
 
   return (
-    <header className="mx-auto w-full max-w-5xl px-4 pt-4 sm:px-6 lg:px-8">
-      <div className="flex flex-col gap-4 rounded-[1.5rem] border border-white/70 bg-white/85 px-4 py-4 shadow-[0_18px_60px_-32px_rgba(15,23,42,0.55)] backdrop-blur sm:px-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <header className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6 lg:px-8">
+      <div className="flex flex-col gap-3 rounded-xl border border-border/80 bg-card/92 px-3 py-3 shadow-sm backdrop-blur">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-sm font-semibold uppercase tracking-[0.32em] text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 bg-primary text-[11px] font-semibold uppercase tracking-[0.2em] text-primary-foreground">
                 A
               </span>
-              <div>
-                <div className="text-xs font-medium uppercase tracking-[0.26em] text-muted-foreground">
-                  Private network
-                </div>
-                <div className="text-lg font-semibold tracking-tight text-slate-950">Awn</div>
+              <div className="leading-tight">
+                <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Awn</div>
+                <div className="text-sm font-semibold text-foreground">Workspace</div>
               </div>
             </Link>
+
+            <nav className="hidden items-center gap-1 rounded-lg bg-muted/70 p-1 md:flex">
+              {links.map((link) => {
+                const isActive = pathname === link.href || (link.href !== "/" && pathname.startsWith(link.href));
+
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={cn(
+                      buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
+                      "h-8 rounded-md px-3",
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
           </div>
 
-          <nav className="flex flex-wrap items-center gap-2">
-            {links.map((link) => {
-              const isActive = pathname === link.href || (link.href !== "/" && pathname.startsWith(link.href));
+          <div className="flex flex-wrap items-center gap-2 md:justify-end">
+            <nav className="flex items-center gap-1 rounded-lg bg-muted/70 p-1 md:hidden">
+              {links.map((link) => {
+                const isActive = pathname === link.href || (link.href !== "/" && pathname.startsWith(link.href));
 
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
-                    "rounded-full px-4",
-                  )}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-          </nav>
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={cn(
+                      buttonVariants({ variant: isActive ? "default" : "ghost", size: "sm" }),
+                      "h-8 rounded-md px-3",
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+            </nav>
 
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <span className="text-sm font-medium text-slate-700">@{viewer.username}</span>
-            <Badge variant="secondary" className="rounded-full px-3 py-1">
-              {formatRole(viewer.role)}
-            </Badge>
-            <Badge variant={viewer.status === "active" ? "default" : "outline"} className="rounded-full px-3 py-1">
-              {formatStatus(viewer.status)}
-            </Badge>
-            <Button variant="outline" size="sm" onClick={() => signOut()}>
+            <div className="hidden min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-1.5 sm:flex">
+              <div className="min-w-0">
+                <div className="truncate text-[12px] font-medium leading-none text-foreground">@{viewer.username}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {formatRole(viewer.role)} • {formatStatus(viewer.status)}
+                </div>
+              </div>
+            </div>
+
+            <ThemeToggle compact />
+
+            <Button variant="ghost" size="sm" className="h-8 px-2.5" onClick={() => signOut()}>
               Sign out
             </Button>
           </div>

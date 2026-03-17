@@ -10,8 +10,9 @@ import { type ChangeEvent, type FormEvent, useMemo, useRef, useState } from "rea
 import { api } from "@awn/convex/convex/api";
 import { AppNavbar } from "@/components/app/app-navbar";
 import { useAwnViewer } from "@/components/app/use-awn-viewer";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -81,14 +82,12 @@ export function BoardShell({ boardId }: BoardShellProps) {
     return (
       <div className="min-h-screen pb-8">
         <AppNavbar viewer={viewer} />
-        <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
           <Card>
             <CardHeader>
-              <CardTitle>Account pending approval</CardTitle>
+              <CardTitle>Workspace access pending</CardTitle>
+              <CardDescription>Your account needs admin approval before you can open boards.</CardDescription>
             </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Your account needs admin approval before you can open boards.
-            </CardContent>
           </Card>
         </main>
       </div>
@@ -126,7 +125,7 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 90,
+    estimateSize: () => 84,
     overscan: 10,
   });
 
@@ -185,7 +184,7 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
     return (
       <div className="min-h-screen pb-8">
         <AppNavbar viewer={viewer} />
-        <main className="mx-auto w-full max-w-5xl px-4 py-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-6xl px-4 py-4 text-sm text-muted-foreground sm:px-6 lg:px-8">
           Loading board…
         </main>
       </div>
@@ -196,7 +195,7 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
     return (
       <div className="min-h-screen pb-8">
         <AppNavbar viewer={viewer} />
-        <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto max-w-6xl px-4 py-4 sm:px-6 lg:px-8">
           <Card>
             <CardHeader>
               <CardTitle>Board not found</CardTitle>
@@ -216,62 +215,89 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
     <div className="min-h-screen pb-8">
       <AppNavbar viewer={viewer} />
 
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
-        <div className="rounded-[1.5rem] border bg-white/80 px-5 py-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.26em] text-muted-foreground">Board</p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{board.name}</p>
-              <p className="mt-2 text-sm text-muted-foreground">{board.description ?? "Message board"}</p>
-            </div>
-            <Link href="/" className="text-sm underline">
+      <main className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-4 sm:px-6 lg:px-8">
+        <section className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Board</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">{board.name}</h1>
+            <p className="mt-1 max-w-2xl text-[13px] text-muted-foreground">
+              {board.description ?? "Internal discussion board"}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary">{items.length} messages</Badge>
+            <Link
+              href="/"
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-border/80 bg-background/80 px-3 text-[12px] font-medium shadow-sm transition-colors hover:bg-accent"
+            >
               Back to boards
             </Link>
           </div>
-        </div>
+        </section>
 
-        <div
-          ref={parentRef}
-          onScroll={onScroll}
-          className="relative min-h-[24rem] flex-1 overflow-auto rounded-[1.5rem] border bg-background"
-          style={{ height: "min(56vh, 42rem)" }}
-        >
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
-            {virtualItems.map((virtualItem) => {
-              const message = items[virtualItem.index];
-              if (!message) {
-                return null;
-              }
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between gap-3">
+              <div>
+                <CardTitle>Message log</CardTitle>
+                <CardDescription>Latest activity in chronological order.</CardDescription>
+              </div>
+              <Badge variant="outline">{list.status === "CanLoadMore" ? "Live" : "Loaded"}</Badge>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div
+                ref={parentRef}
+                onScroll={onScroll}
+                className="relative h-[68vh] overflow-auto rounded-lg border border-border/80 bg-background/70"
+              >
+                <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+                  {virtualItems.map((virtualItem) => {
+                    const message = items[virtualItem.index];
+                    if (!message) {
+                      return null;
+                    }
 
-              return (
-                <div
-                  key={message._id}
-                  className="absolute left-0 w-full px-3 py-2"
-                  style={{ transform: `translateY(${virtualItem.start}px)` }}
-                >
-                  <div className="rounded-xl border bg-card p-3">
-                    <div className="mb-1 text-xs text-muted-foreground">
-                      {new Date(message._creationTime).toLocaleString()}
-                    </div>
-                    <div className="whitespace-pre-wrap text-sm">{message.body}</div>
-                  </div>
+                    return (
+                      <div
+                        key={message._id}
+                        className="absolute left-0 w-full px-3 py-2"
+                        style={{ transform: `translateY(${virtualItem.start}px)` }}
+                      >
+                        <div className="rounded-lg border border-border/80 bg-card px-3 py-2">
+                          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                            {new Date(message._creationTime).toLocaleString()}
+                          </div>
+                          <div className="whitespace-pre-wrap text-[13px] leading-6 text-foreground">{message.body}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </CardContent>
+          </Card>
 
-        <form onSubmit={onSubmit} className="grid gap-2 rounded-[1.5rem] border bg-card p-4">
-          <Textarea
-            value={body}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setBody(event.target.value)}
-            placeholder="Write a message. Mention users with @username"
-          />
-          <Input ref={fileRef} type="file" multiple />
-          <Button type="submit" disabled={sending || !body.trim()}>
-            {sending ? "Sending…" : "Send"}
-          </Button>
-        </form>
+          <Card>
+            <CardHeader>
+              <CardTitle>New post</CardTitle>
+              <CardDescription>Write a short update and optionally attach files.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={onSubmit} className="grid gap-3">
+                <Textarea
+                  value={body}
+                  onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setBody(event.target.value)}
+                  placeholder="Write a message. Mention users with @username"
+                  className="min-h-[160px]"
+                />
+                <Input ref={fileRef} type="file" multiple />
+                <Button type="submit" disabled={sending || !body.trim()}>
+                  {sending ? "Sending…" : "Send"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </section>
       </main>
     </div>
   );

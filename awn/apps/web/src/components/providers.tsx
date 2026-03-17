@@ -5,8 +5,9 @@ import type { NoUserInfo, UserInfo } from "@workos-inc/authkit-nextjs";
 import { AuthKitProvider, useAccessToken, useAuth } from "@workos-inc/authkit-nextjs/components";
 import { ConvexReactClient } from "convex/react";
 import { useCallback } from "react";
+import { getClientConvexUrl } from "@/lib/convex";
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+const convexUrl = getClientConvexUrl();
 const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
 
 function useConvexAuthFromWorkOS() {

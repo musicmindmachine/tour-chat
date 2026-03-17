@@ -3,31 +3,91 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 40% 98%;
-  --foreground: 222.2 47.4% 11.2%;
+  --background: 210 24% 98%;
+  --foreground: 222 28% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 47.4% 11.2%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
-  --radius: 0.75rem;
+  --card-foreground: 222 28% 12%;
+  --primary: 222 38% 14%;
+  --primary-foreground: 210 22% 98%;
+  --secondary: 210 18% 93%;
+  --secondary-foreground: 222 24% 18%;
+  --muted: 210 20% 95%;
+  --muted-foreground: 215 13% 40%;
+  --accent: 210 18% 94%;
+  --accent-foreground: 222 28% 14%;
+  --border: 214 18% 86%;
+  --input: 214 18% 86%;
+  --ring: 215 24% 58%;
+  --radius: 0.625rem;
+}
+
+html {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --background: 222 28% 10%;
+  --foreground: 210 20% 94%;
+  --card: 222 24% 13%;
+  --card-foreground: 210 20% 94%;
+  --primary: 210 20% 96%;
+  --primary-foreground: 222 30% 12%;
+  --secondary: 222 20% 18%;
+  --secondary-foreground: 210 18% 90%;
+  --muted: 222 18% 16%;
+  --muted-foreground: 215 12% 68%;
+  --accent: 222 18% 18%;
+  --accent-foreground: 210 20% 94%;
+  --border: 222 16% 24%;
+  --input: 222 16% 24%;
+  --ring: 214 30% 70%;
 }
 
 * {
   @apply border-border;
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 body {
   @apply min-h-screen bg-background text-foreground antialiased;
   background-image:
-    radial-gradient(circle at top, rgba(148, 163, 184, 0.16), transparent 34%),
-    linear-gradient(180deg, #f8fbff 0%, #f8fafc 44%, #ffffff 100%);
+    radial-gradient(circle at top, rgba(15, 23, 42, 0.05), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 44%, rgba(245, 247, 250, 1) 100%);
+}
+
+html[data-theme="dark"] body {
+  background-image:
+    radial-gradient(circle at top, rgba(148, 163, 184, 0.16), transparent 30%),
+    linear-gradient(180deg, rgba(9, 14, 26, 0.98) 0%, rgba(15, 23, 42, 1) 46%, rgba(13, 18, 31, 1) 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(circle at top, black, transparent 78%);
+}
+
+html[data-theme="dark"] body::before {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.18);
 }

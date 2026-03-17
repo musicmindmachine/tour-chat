@@ -3,14 +3,14 @@
 import Link from "next/link";
 import type { FunctionReference } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
+import { type ChangeEvent, useState } from "react";
 import { api } from "@awn/convex/convex/api";
 import { AppNavbar } from "@/components/app/app-navbar";
-import { useAwnViewer } from "@/components/app/use-awn-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { type ChangeEvent, useState } from "react";
+import { useAwnViewer } from "@/components/app/use-awn-viewer";
 
 type ConvexApi = {
   boards: { list: FunctionReference<"query">; create: FunctionReference<"mutation"> };
@@ -19,6 +19,15 @@ type ConvexApi = {
 type DashboardProps = {
   inviteToken?: string;
 };
+
+function StatCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-border/80 bg-card/75 px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
+      <div className="mt-1 text-lg font-semibold tracking-tight text-foreground">{value}</div>
+    </div>
+  );
+}
 
 export function Dashboard({ inviteToken }: DashboardProps) {
   const convexApi = api as ConvexApi;
@@ -60,21 +69,17 @@ export function Dashboard({ inviteToken }: DashboardProps) {
     return (
       <div className="min-h-screen pb-8">
         <AppNavbar viewer={viewer} />
-        <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>@{viewer.username}</span>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{viewer.role}</Badge>
-                  <Badge variant="outline">{viewer.status}</Badge>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Workspace access pending</CardTitle>
+                  <CardDescription>Your account is waiting on admin approval.</CardDescription>
                 </div>
-              </CardTitle>
-              <CardDescription>Invite-only message board network</CardDescription>
+                <Badge variant="outline">{viewer.status}</Badge>
+              </div>
             </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Your account is pending admin approval before you can access message boards.
-            </CardContent>
           </Card>
         </main>
       </div>
@@ -85,7 +90,7 @@ export function Dashboard({ inviteToken }: DashboardProps) {
     return (
       <div className="min-h-screen pb-8">
         <AppNavbar viewer={viewer} />
-        <main className="mx-auto w-full max-w-5xl px-4 py-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-6xl px-4 py-4 text-sm text-muted-foreground sm:px-6 lg:px-8">
           Loading boards…
         </main>
       </div>
@@ -114,38 +119,57 @@ export function Dashboard({ inviteToken }: DashboardProps) {
   };
 
   return (
-    <div className="min-h-screen pb-10">
+    <div className="min-h-screen pb-8">
       <AppNavbar viewer={viewer} />
 
-      <main className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <section className="grid gap-6 lg:grid-cols-[1.15fr,0.85fr]">
-          <Card className="overflow-hidden border-0 bg-slate-950 text-white shadow-[0_24px_90px_-40px_rgba(15,23,42,0.75)]">
-            <CardHeader className="gap-4">
-              <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.26em] text-slate-300">
-                <span>Boards</span>
-                <span className="h-1 w-1 rounded-full bg-slate-500" />
-                <span>{boardList.length} live</span>
-              </div>
+      <main className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-4 sm:px-6 lg:px-8">
+        <section className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Boards</p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Workspace overview</h1>
+            <p className="mt-1 max-w-2xl text-[13px] text-muted-foreground">
+              Keep conversations organized, monitor access, and jump directly into any board.
+            </p>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <StatCard label="Role" value={viewer.role} />
+            <StatCard label="Status" value={viewer.status} />
+            <StatCard label="Boards" value={boardList.length} />
+          </div>
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between gap-3">
               <div>
-                <CardTitle className="text-3xl tracking-tight text-white">Jump back into the network.</CardTitle>
-                <CardDescription className="mt-3 max-w-2xl text-slate-300">
-                  Read across the boards, post updates in real time, and keep the invite-only space moving.
-                </CardDescription>
+                <CardTitle>Board directory</CardTitle>
+                <CardDescription>Compact view of every active board in the workspace.</CardDescription>
               </div>
+              <Badge variant="secondary">{boardList.length} total</Badge>
             </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-sm text-slate-300">Your role</div>
-                <div className="mt-2 text-2xl font-semibold capitalize">{viewer.role}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-sm text-slate-300">Account status</div>
-                <div className="mt-2 text-2xl font-semibold capitalize">{viewer.status}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-sm text-slate-300">Boards available</div>
-                <div className="mt-2 text-2xl font-semibold">{boardList.length}</div>
-              </div>
+            <CardContent className="pt-0">
+              {boardList.length === 0 ? (
+                <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">No boards yet.</div>
+              ) : (
+                <div className="divide-y divide-border/80">
+                  {boardList.map((board) => (
+                    <Link
+                      key={board._id}
+                      href={`/boards/${board._id}`}
+                      className="grid gap-2 px-1 py-3 transition-colors hover:bg-accent/50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-foreground">{board.name}</div>
+                        <div className="mt-1 truncate text-[13px] text-muted-foreground">
+                          {board.description ?? "No description provided."}
+                        </div>
+                      </div>
+                      <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Open</div>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -153,7 +177,7 @@ export function Dashboard({ inviteToken }: DashboardProps) {
             <Card>
               <CardHeader>
                 <CardTitle>Create board</CardTitle>
-                <CardDescription>Admins can spin up new rooms for different parts of the network.</CardDescription>
+                <CardDescription>Add a new space for a topic, team, or event.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3">
                 <Input
@@ -174,42 +198,20 @@ export function Dashboard({ inviteToken }: DashboardProps) {
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>Need to add people?</CardTitle>
-                <CardDescription>
-                  Head to the members page to send invite links and see who already has access.
-                </CardDescription>
+                <CardTitle>Operations</CardTitle>
+                <CardDescription>Need to adjust access or send new invites?</CardDescription>
               </CardHeader>
-              <CardContent>
-                <Link className="inline-flex rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground" href="/members">
+              <CardContent className="grid gap-2">
+                <Link
+                  className="inline-flex h-9 items-center justify-center rounded-lg border border-border/80 bg-background/80 px-3 text-[13px] font-medium shadow-sm transition-colors hover:bg-accent"
+                  href="/members"
+                >
                   Open members
                 </Link>
               </CardContent>
             </Card>
           )}
         </section>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Board directory</CardTitle>
-            <CardDescription>Open a board to read and post messages.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {boardList.length === 0 ? (
-              <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">No boards yet.</div>
-            ) : (
-              boardList.map((board) => (
-                <Link
-                  key={board._id}
-                  className="rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:bg-accent"
-                  href={`/boards/${board._id}`}
-                >
-                  <div className="text-base font-semibold text-slate-950">{board.name}</div>
-                  <div className="mt-2 text-sm text-muted-foreground">{board.description ?? "No description yet."}</div>
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
       </main>
     </div>
   );
