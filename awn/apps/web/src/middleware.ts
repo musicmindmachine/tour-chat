@@ -1,5 +1,5 @@
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
-import { getWorkosRedirectUri } from "./src/lib/workos";
+import { getWorkosRedirectUri } from "@/lib/workos";
 
 export default authkitMiddleware({
   redirectUri: getWorkosRedirectUri(),
