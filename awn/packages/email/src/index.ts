@@ -6,6 +6,7 @@ import { MentionEmailTemplate } from "./templates/mention-email";
 export type InviteEmailInput = {
   inviteLink: string;
   inviterName: string;
+  inviteeRole: "admin" | "moderator" | "member";
 };
 
 export type MentionEmailInput = {
@@ -16,9 +17,15 @@ export type MentionEmailInput = {
 };
 
 export async function renderInviteEmail(input: InviteEmailInput) {
+  const roleLabel =
+    input.inviteeRole === "admin"
+      ? " as an admin"
+      : input.inviteeRole === "moderator"
+        ? " as a moderator"
+        : "";
   const subject = "You were invited to join Awn";
   const html = await render(InviteEmailTemplate(input));
-  const text = `You were invited to join Awn by ${input.inviterName}. Accept: ${input.inviteLink}`;
+  const text = `You were invited to join Awn${roleLabel} by ${input.inviterName}. Accept: ${input.inviteLink}`;
   return { subject, html, text };
 }
 

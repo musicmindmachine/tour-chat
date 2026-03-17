@@ -14,9 +14,17 @@ import * as React from "react";
 type InviteEmailProps = {
   inviteLink: string;
   inviterName: string;
+  inviteeRole: "admin" | "moderator" | "member";
 };
 
-export function InviteEmailTemplate({ inviteLink, inviterName }: InviteEmailProps) {
+export function InviteEmailTemplate({ inviteLink, inviterName, inviteeRole }: InviteEmailProps) {
+  const roleCopy =
+    inviteeRole === "admin"
+      ? " as an admin"
+      : inviteeRole === "moderator"
+        ? " as a moderator"
+        : "";
+
   return (
     <Html>
       <Head />
@@ -25,7 +33,7 @@ export function InviteEmailTemplate({ inviteLink, inviterName }: InviteEmailProp
         <Container style={{ margin: "24px auto", backgroundColor: "#ffffff", padding: "24px" }}>
           <Heading style={{ marginTop: 0, color: "#0f172a" }}>You are invited</Heading>
           <Text style={{ color: "#334155" }}>
-            {inviterName} invited you to join this private message board network.
+            {inviterName} invited you to join this private message board network{roleCopy}.
           </Text>
           <Section style={{ margin: "24px 0" }}>
             <Button

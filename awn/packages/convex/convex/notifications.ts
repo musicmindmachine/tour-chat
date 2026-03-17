@@ -57,12 +57,14 @@ export const sendInviteEmail = internalMutation({
     email: v.string(),
     token: v.string(),
     inviterUsername: v.string(),
+    inviteeRole: v.optional(v.union(v.literal("admin"), v.literal("moderator"), v.literal("member"))),
   },
   handler: async (ctx, args) => {
     const inviteLink = `${appBaseUrl}/?invite=${args.token}`;
     const rendered = await renderInviteEmail({
       inviteLink,
       inviterName: args.inviterUsername,
+      inviteeRole: args.inviteeRole ?? "member",
     });
 
     await resendClient.sendEmail(ctx, {

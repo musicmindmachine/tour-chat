@@ -216,6 +216,7 @@ export const bootstrapAdmin = mutation({
         token,
         email,
         invitedBy: admin._id,
+        role: "member",
         boardId: starterBoard.boardId,
         expiresAt,
       });
@@ -224,6 +225,7 @@ export const bootstrapAdmin = mutation({
         email,
         token,
         inviterUsername: admin.username,
+        inviteeRole: "member",
       });
 
       createdInvites.push({

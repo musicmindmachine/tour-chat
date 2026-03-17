@@ -3,17 +3,16 @@
 import Link from "next/link";
 import type { FunctionReference } from "convex/server";
 import { useMutation, useQuery } from "convex/react";
-import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { useSearchParams } from "next/navigation";
 import { api } from "@awn/convex/convex/api";
+import { AppNavbar } from "@/components/app/app-navbar";
+import { useAwnViewer } from "@/components/app/use-awn-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { type ChangeEvent, useEffect, useState } from "react";
+import { type ChangeEvent, useState } from "react";
 
 type ConvexApi = {
-  users: { current: FunctionReference<"query">; syncCurrentUser: FunctionReference<"mutation"> };
   boards: { list: FunctionReference<"query">; create: FunctionReference<"mutation"> };
 };
 
@@ -21,59 +20,36 @@ type DashboardProps = {
   inviteToken?: string;
 };
 
-export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
+export function Dashboard({ inviteToken }: DashboardProps) {
   const convexApi = api as ConvexApi;
-  const { signOut, user } = useAuth();
-  const searchParams = useSearchParams();
-  const viewer = useQuery(convexApi.users.current);
+  const { authLoading, syncingUser, user, viewer } = useAwnViewer(inviteToken);
   const createBoard = useMutation(convexApi.boards.create);
-  const syncCurrentUser = useMutation(convexApi.users.syncCurrentUser);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
-  const [syncingUser, setSyncingUser] = useState(false);
 
-  const inviteToken = searchParams.get("invite") ?? initialInviteToken;
   const shouldLoadBoards = viewer?.status === "active";
   const boards = useQuery(convexApi.boards.list, shouldLoadBoards ? {} : ("skip" as never));
 
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!user || viewer !== null || syncingUser) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setSyncingUser(true);
-
-    void syncCurrentUser({
-      inviteToken: inviteToken ?? undefined,
-      email: user.email,
-      workosUserId: user.id,
-    })
-      .catch((error) => {
-        console.error("Failed to sync current user with Convex.", error);
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setSyncingUser(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [inviteToken, syncCurrentUser, syncingUser, user, viewer]);
-
-  if (viewer === undefined) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+  if (authLoading || viewer === undefined) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-6 text-sm text-muted-foreground">
+        Loading boards…
+      </main>
+    );
   }
 
-  if (user && (viewer === null || syncingUser)) {
-    return <div className="p-6 text-sm text-muted-foreground">Finishing account setup…</div>;
+  if (!user) {
+    return null;
+  }
+
+  if (viewer === null || syncingUser) {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center justify-center px-6 text-sm text-muted-foreground">
+        Finishing account setup…
+      </main>
+    );
   }
 
   if (!viewer) {
@@ -82,33 +58,38 @@ export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
 
   if (viewer.status !== "active") {
     return (
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>@{viewer.username}</span>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary">{viewer.role}</Badge>
-                <Badge variant="outline">{viewer.status}</Badge>
-              </div>
-            </CardTitle>
-            <CardDescription>Invite-only message board network</CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between gap-3">
-            <div className="text-sm text-muted-foreground">
+      <div className="min-h-screen pb-8">
+        <AppNavbar viewer={viewer} />
+        <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>@{viewer.username}</span>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">{viewer.role}</Badge>
+                  <Badge variant="outline">{viewer.status}</Badge>
+                </div>
+              </CardTitle>
+              <CardDescription>Invite-only message board network</CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
               Your account is pending admin approval before you can access message boards.
-            </div>
-            <Button variant="outline" onClick={() => signOut()}>
-              Sign out
-            </Button>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </main>
       </div>
     );
   }
 
   if (boards === undefined) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading boards…</div>;
+    return (
+      <div className="min-h-screen pb-8">
+        <AppNavbar viewer={viewer} />
+        <main className="mx-auto w-full max-w-5xl px-4 py-6 text-sm text-muted-foreground sm:px-6 lg:px-8">
+          Loading boards…
+        </main>
+      </div>
+    );
   }
 
   const isAdmin = viewer.role === "admin";
@@ -133,76 +114,103 @@ export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>@{viewer.username}</span>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">{viewer.role}</Badge>
-              <Badge variant={viewer.status === "active" ? "default" : "outline"}>{viewer.status}</Badge>
-            </div>
-          </CardTitle>
-          <CardDescription>Invite-only message board network</CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between gap-3">
-          <div className="text-sm text-muted-foreground">
-            {viewer.status === "active"
-              ? "You have full access to boards."
-              : "Your account is pending admin approval."}
-          </div>
-          <Button variant="outline" onClick={() => signOut()}>
-            Sign out
-          </Button>
-        </CardContent>
-      </Card>
+    <div className="min-h-screen pb-10">
+      <AppNavbar viewer={viewer} />
 
-      {isAdmin ? (
+      <main className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <section className="grid gap-6 lg:grid-cols-[1.15fr,0.85fr]">
+          <Card className="overflow-hidden border-0 bg-slate-950 text-white shadow-[0_24px_90px_-40px_rgba(15,23,42,0.75)]">
+            <CardHeader className="gap-4">
+              <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.26em] text-slate-300">
+                <span>Boards</span>
+                <span className="h-1 w-1 rounded-full bg-slate-500" />
+                <span>{boardList.length} live</span>
+              </div>
+              <div>
+                <CardTitle className="text-3xl tracking-tight text-white">Jump back into the network.</CardTitle>
+                <CardDescription className="mt-3 max-w-2xl text-slate-300">
+                  Read across the boards, post updates in real time, and keep the invite-only space moving.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-sm text-slate-300">Your role</div>
+                <div className="mt-2 text-2xl font-semibold capitalize">{viewer.role}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-sm text-slate-300">Account status</div>
+                <div className="mt-2 text-2xl font-semibold capitalize">{viewer.status}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-sm text-slate-300">Boards available</div>
+                <div className="mt-2 text-2xl font-semibold">{boardList.length}</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {isAdmin ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Create board</CardTitle>
+                <CardDescription>Admins can spin up new rooms for different parts of the network.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                <Input
+                  value={name}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)}
+                  placeholder="Board name"
+                />
+                <Input
+                  value={description}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setDescription(event.target.value)}
+                  placeholder="Short description"
+                />
+                <Button onClick={onCreateBoard} disabled={creating || !name.trim()}>
+                  {creating ? "Creating…" : "Create board"}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Need to add people?</CardTitle>
+                <CardDescription>
+                  Head to the members page to send invite links and see who already has access.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link className="inline-flex rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground" href="/members">
+                  Open members
+                </Link>
+              </CardContent>
+            </Card>
+          )}
+        </section>
+
         <Card>
           <CardHeader>
-            <CardTitle>Create board</CardTitle>
-            <CardDescription>Only admins can create boards.</CardDescription>
+            <CardTitle>Board directory</CardTitle>
+            <CardDescription>Open a board to read and post messages.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3">
-            <Input
-              value={name}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setName(event.target.value)}
-              placeholder="Board name"
-            />
-            <Input
-              value={description}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setDescription(event.target.value)}
-              placeholder="Short description"
-            />
-            <Button onClick={onCreateBoard} disabled={creating || !name.trim()}>
-              {creating ? "Creating…" : "Create board"}
-            </Button>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {boardList.length === 0 ? (
+              <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">No boards yet.</div>
+            ) : (
+              boardList.map((board) => (
+                <Link
+                  key={board._id}
+                  className="rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:bg-accent"
+                  href={`/boards/${board._id}`}
+                >
+                  <div className="text-base font-semibold text-slate-950">{board.name}</div>
+                  <div className="mt-2 text-sm text-muted-foreground">{board.description ?? "No description yet."}</div>
+                </Link>
+              ))
+            )}
           </CardContent>
         </Card>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Boards</CardTitle>
-          <CardDescription>Open a board to read and post messages.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          {boardList.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No boards yet.</div>
-          ) : (
-            boardList.map((board) => (
-              <Link
-                key={board._id}
-                className="rounded-lg border p-3 text-sm transition hover:bg-accent"
-                href={`/boards/${board._id}`}
-              >
-                <div className="font-medium">{board.name}</div>
-                <div className="text-muted-foreground">{board.description ?? "No description"}</div>
-              </Link>
-            ))
-          )}
-        </CardContent>
-      </Card>
+      </main>
     </div>
   );
 }

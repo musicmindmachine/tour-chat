@@ -27,13 +27,15 @@ export default defineSchema({
     token: v.string(),
     email: v.string(),
     invitedBy: v.id("users"),
+    role: v.optional(v.union(v.literal("admin"), v.literal("moderator"), v.literal("member"))),
     expiresAt: v.number(),
     usedAt: v.optional(v.number()),
     acceptedBy: v.optional(v.id("users")),
     boardId: v.optional(v.id("boards")),
   })
     .index("by_token", ["token"])
-    .index("by_email", ["email"]),
+    .index("by_email", ["email"])
+    .index("by_invited_by", ["invitedBy"]),
 
   boards: defineTable({
     slug: v.string(),

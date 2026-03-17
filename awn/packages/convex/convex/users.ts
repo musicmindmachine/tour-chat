@@ -40,7 +40,11 @@ export const current = query({
       return null;
     }
 
-    const workosUserId = getWorkosUserId(identity);
+    const workosUserId = identity.subject ?? identity.tokenIdentifier;
+    if (!workosUserId) {
+      return null;
+    }
+
     return findUserByWorkosId(ctx, workosUserId);
   },
 });
@@ -81,13 +85,6 @@ export const syncCurrentUser = mutation({
     const now = Date.now();
     const existing = await findUserByWorkosId(ctx, workosUserId);
 
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        lastSeenAt: now,
-      });
-      return (await ctx.db.get(existing._id)) ?? existing;
-    }
-
     let invite = null;
     if (args.inviteToken) {
       invite = await ctx.db
@@ -109,6 +106,31 @@ export const syncCurrentUser = mutation({
       !invite.usedAt &&
       invite.expiresAt > now &&
       normalizeEmail(invite.email) === email;
+    const validInvite = inviteIsValid ? invite : null;
+
+    if (existing) {
+      if (validInvite && existing.status !== "active") {
+        await ctx.db.patch(existing._id, {
+          role: validInvite.role ?? existing.role,
+          status: "active",
+          inviteId: validInvite._id,
+          approvedAt: now,
+          approvedBy: validInvite.invitedBy,
+          lastSeenAt: now,
+        });
+
+        await ctx.db.patch(validInvite._id, {
+          usedAt: now,
+          acceptedBy: existing._id,
+        });
+      } else {
+        await ctx.db.patch(existing._id, {
+          lastSeenAt: now,
+        });
+      }
+
+      return (await ctx.db.get(existing._id)) ?? existing;
+    }
 
     const username = await getUniqueUsername(
       ctx,
@@ -120,18 +142,18 @@ export const syncCurrentUser = mutation({
       workosUserId,
       email,
       username,
-      role: DEFAULT_ROLE,
-      status: inviteIsValid ? "active" : "pending",
-      inviteId: inviteIsValid ? invite._id : undefined,
-      approvedAt: inviteIsValid ? now : undefined,
-      approvedBy: inviteIsValid ? invite.invitedBy : undefined,
+      role: validInvite ? (validInvite.role ?? DEFAULT_ROLE) : DEFAULT_ROLE,
+      status: validInvite ? "active" : "pending",
+      inviteId: validInvite?._id,
+      approvedAt: validInvite ? now : undefined,
+      approvedBy: validInvite?.invitedBy,
       mentionEmails: true,
       mentionPush: true,
       lastSeenAt: now,
     });
 
-    if (inviteIsValid) {
-      await ctx.db.patch(invite._id, {
+    if (validInvite) {
+      await ctx.db.patch(validInvite._id, {
         usedAt: now,
         acceptedBy: userId,
       });
@@ -186,6 +208,52 @@ export const listPendingUsers = query({
       .query("users")
       .withIndex("by_status", (q: any) => q.eq("status", "pending"))
       .collect();
+  },
+});
+
+const roleOrder = {
+  admin: 0,
+  moderator: 1,
+  member: 2,
+} as const;
+
+const statusOrder = {
+  active: 0,
+  pending: 1,
+  suspended: 2,
+} as const;
+
+export const listDirectory = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await requireActiveViewer(ctx);
+    const users = await ctx.db.query("users").collect();
+
+    return users
+      .filter((user) => viewer.role === "admin" || user.status === "active")
+      .sort((left, right) => {
+        const statusDelta = statusOrder[left.status] - statusOrder[right.status];
+        if (statusDelta !== 0) {
+          return statusDelta;
+        }
+
+        const roleDelta = roleOrder[left.role] - roleOrder[right.role];
+        if (roleDelta !== 0) {
+          return roleDelta;
+        }
+
+        return left.username.localeCompare(right.username);
+      })
+      .map((user) => ({
+        _id: user._id,
+        email: viewer.role === "admin" || user._id === viewer._id ? user.email : undefined,
+        username: user.username,
+        role: user.role,
+        status: user.status,
+        approvedAt: user.approvedAt,
+        lastSeenAt: user.lastSeenAt,
+        isSelf: user._id === viewer._id,
+      }));
   },
 });
 
