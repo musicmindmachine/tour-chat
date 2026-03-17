@@ -20,6 +20,19 @@ type DashboardProps = {
   inviteToken?: string;
 };
 
+type BoardSummary = {
+  _id: string;
+  description?: string;
+  name: string;
+  unreadCount: number;
+  unreadPreview: Array<{
+    _id: string;
+    authorName: string;
+    body: string;
+    createdAt: number;
+  }>;
+};
+
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-lg border border-border/80 bg-card/75 px-3 py-2">
@@ -98,7 +111,8 @@ export function Dashboard({ inviteToken }: DashboardProps) {
   }
 
   const isAdmin = viewer.role === "admin";
-  const boardList = (boards ?? []) as Array<{ _id: string; name: string; description?: string }>;
+  const boardList = (boards ?? []) as BoardSummary[];
+  const totalUnread = boardList.reduce((sum, board) => sum + board.unreadCount, 0);
 
   const onCreateBoard = async () => {
     if (!name.trim()) {
@@ -132,10 +146,11 @@ export function Dashboard({ inviteToken }: DashboardProps) {
             </p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-4">
             <StatCard label="Role" value={viewer.role} />
             <StatCard label="Status" value={viewer.status} />
             <StatCard label="Boards" value={boardList.length} />
+            <StatCard label="Unread" value={totalUnread} />
           </div>
         </section>
 
@@ -144,7 +159,7 @@ export function Dashboard({ inviteToken }: DashboardProps) {
             <CardHeader className="flex-row items-center justify-between gap-3">
               <div>
                 <CardTitle>Board directory</CardTitle>
-                <CardDescription>Compact view of every active board in the workspace.</CardDescription>
+                <CardDescription>Compact view of every active board and the unread activity waiting in each.</CardDescription>
               </div>
               <Badge variant="secondary">{boardList.length} total</Badge>
             </CardHeader>
@@ -157,15 +172,41 @@ export function Dashboard({ inviteToken }: DashboardProps) {
                     <Link
                       key={board._id}
                       href={`/boards/${board._id}`}
-                      className="grid gap-2 px-1 py-3 transition-colors hover:bg-accent/50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                      className="grid gap-2 px-1 py-3 transition-colors hover:bg-accent/50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
                     >
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-foreground">{board.name}</div>
-                        <div className="mt-1 truncate text-[13px] text-muted-foreground">
-                          {board.description ?? "No description provided."}
+                        <div className="flex items-center gap-2">
+                          <div className="truncate text-sm font-medium text-foreground">{board.name}</div>
+                          <Badge variant={board.unreadCount > 0 ? "secondary" : "outline"}>
+                            {board.unreadCount > 0 ? `${board.unreadCount} unread` : "Caught up"}
+                          </Badge>
                         </div>
+                        {board.unreadPreview.length > 0 ? (
+                          <div className="mt-2 grid gap-1.5">
+                            {board.unreadPreview.map((post) => (
+                              <div
+                                key={post._id}
+                                className="flex items-center gap-2 rounded-md border border-border/70 bg-background/70 px-2 py-1"
+                              >
+                                <div className="shrink-0 text-[11px] font-medium text-foreground">{post.authorName}</div>
+                                <div className="truncate text-[12px] text-muted-foreground">{post.body}</div>
+                              </div>
+                            ))}
+                            {board.unreadCount > board.unreadPreview.length ? (
+                              <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                                +{board.unreadCount - board.unreadPreview.length} more unread
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="mt-1 truncate text-[13px] text-muted-foreground">
+                            {board.description ?? "No description provided."}
+                          </div>
+                        )}
                       </div>
-                      <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Open</div>
+                      <div className="pt-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                        Open
+                      </div>
                     </Link>
                   ))}
                 </div>

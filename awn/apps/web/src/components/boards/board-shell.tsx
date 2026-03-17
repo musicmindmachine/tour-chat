@@ -6,7 +6,7 @@ import type { FunctionReference } from "convex/server";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import type { PaginatedQueryReference } from "convex/react";
 import Link from "next/link";
-import { type ChangeEvent, type FormEvent, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { api } from "@awn/convex/convex/api";
 import { AppNavbar } from "@/components/app/app-navbar";
 import { useAwnViewer } from "@/components/app/use-awn-viewer";
@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 type ConvexApi = {
-  boards: { getById: FunctionReference<"query"> };
+  boards: { getById: FunctionReference<"query">; markRead: FunctionReference<"mutation"> };
   posts: { create: FunctionReference<"mutation">; listByBoard: PaginatedQueryReference };
   files: {
     attachFileToBoard: FunctionReference<"mutation">;
@@ -36,7 +36,27 @@ type Viewer = {
   status: "active" | "pending" | "suspended";
 };
 
+type Board = {
+  _id: string;
+  name: string;
+  description?: string;
+};
+
+type BoardMessage = {
+  _id: string;
+  _creationTime: number;
+  authorName: string;
+  body: string;
+  createdAt: number;
+  deletedAt?: number;
+  isUnread: boolean;
+};
+
 const PAGE_SIZE = 30;
+
+function isNearBottom(element: HTMLDivElement) {
+  return element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+}
 
 export function BoardShell({ boardId }: BoardShellProps) {
   const { authLoading, syncingUser, user, viewer } = useAwnViewer();
@@ -104,7 +124,8 @@ type ActiveBoardShellProps = {
 
 function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
   const convexApi = api as ConvexApi;
-  const board = useQuery(convexApi.boards.getById, { boardId });
+  const board = useQuery(convexApi.boards.getById, { boardId }) as Board | null | undefined;
+  const markBoardRead = useMutation(convexApi.boards.markRead);
   const createPost = useMutation(convexApi.posts.create);
   const attachFile = useMutation(convexApi.files.attachFileToBoard);
   const uploadFile = useUploadFile(convexApi.files);
@@ -116,20 +137,91 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
     { initialNumItems: PAGE_SIZE },
   );
 
-  const items = useMemo(() => [...list.results].reverse(), [list.results]);
+  const items = useMemo(() => ([...list.results] as BoardMessage[]).reverse(), [list.results]);
+  const latestMessage = items[items.length - 1];
+  const unreadCount = items.filter((message) => message.isUnread).length;
   const parentRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const didAutoScrollRef = useRef(false);
+  const lastMarkedHeadRef = useRef<string | null>(null);
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
 
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 84,
+    estimateSize: () => 104,
     overscan: 10,
   });
 
   const virtualItems = virtualizer.getVirtualItems();
+
+  const syncLatestReadHead = useEffectEvent(async () => {
+    if (!latestMessage || lastMarkedHeadRef.current === latestMessage._id) {
+      return;
+    }
+
+    try {
+      await markBoardRead({
+        boardId,
+        postId: latestMessage._id,
+      });
+      lastMarkedHeadRef.current = latestMessage._id;
+    } catch (error) {
+      console.error("Failed to sync board read state.", error);
+    }
+  });
+
+  useEffect(() => {
+    const element = parentRef.current;
+    if (!element || !latestMessage) {
+      return;
+    }
+
+    if (!didAutoScrollRef.current) {
+      didAutoScrollRef.current = true;
+      requestAnimationFrame(() => {
+        const node = parentRef.current;
+        if (!node) {
+          return;
+        }
+
+        node.scrollTop = node.scrollHeight;
+        void syncLatestReadHead();
+      });
+      return;
+    }
+
+    if (!isNearBottom(element)) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const node = parentRef.current;
+      if (!node) {
+        return;
+      }
+
+      node.scrollTop = node.scrollHeight;
+      void syncLatestReadHead();
+    });
+  }, [latestMessage?._id, items.length, syncLatestReadHead]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      const element = parentRef.current;
+      if (!element || document.visibilityState !== "visible" || !isNearBottom(element)) {
+        return;
+      }
+
+      void syncLatestReadHead();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [syncLatestReadHead]);
 
   const onScroll = () => {
     const element = parentRef.current;
@@ -140,6 +232,10 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
     const nearTop = element.scrollTop < 240;
     if (nearTop && list.status === "CanLoadMore" && !list.isLoading) {
       void list.loadMore(PAGE_SIZE);
+    }
+
+    if (isNearBottom(element)) {
+      void syncLatestReadHead();
     }
   };
 
@@ -225,7 +321,8 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{items.length} messages</Badge>
+            <Badge variant="secondary">{items.length} shown</Badge>
+            <Badge variant="outline">{unreadCount > 0 ? `${unreadCount} unread` : "Caught up"}</Badge>
             <Link
               href="/"
               className="inline-flex h-8 items-center justify-center rounded-lg border border-border/80 bg-background/80 px-3 text-[12px] font-medium shadow-sm transition-colors hover:bg-accent"
@@ -263,11 +360,23 @@ function ActiveBoardShell({ boardId, viewer }: ActiveBoardShellProps) {
                         className="absolute left-0 w-full px-3 py-2"
                         style={{ transform: `translateY(${virtualItem.start}px)` }}
                       >
-                        <div className="rounded-lg border border-border/80 bg-card px-3 py-2">
-                          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            {new Date(message._creationTime).toLocaleString()}
+                        <div className="rounded-lg border border-border/80 bg-card px-3 py-2.5 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div className="truncate text-[12px] font-semibold text-foreground">{message.authorName}</div>
+                              {message.isUnread ? (
+                                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                                  Unread
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <div className="shrink-0 text-[11px] font-medium text-muted-foreground">
+                              {new Date(message.createdAt).toLocaleString()}
+                            </div>
                           </div>
-                          <div className="whitespace-pre-wrap text-[13px] leading-6 text-foreground">{message.body}</div>
+                          <div className="mt-1.5 whitespace-pre-wrap text-[13px] leading-6 text-foreground">
+                            {message.body}
+                          </div>
                         </div>
                       </div>
                     );

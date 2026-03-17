@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireActiveViewer, requireAdmin, assertBoardAccess } from "./lib/auth";
+import { getBoardReadState, recordBoardReadHead } from "./lib/read-state";
 
 function slugify(value: string) {
   return value
@@ -15,13 +16,47 @@ function slugify(value: string) {
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    await requireActiveViewer(ctx);
+    const viewer = await requireActiveViewer(ctx);
 
-    return ctx.db
+    const boards = await ctx.db
       .query("boards")
       .withIndex("by_created_at")
       .filter((q: any) => q.eq(q.field("isArchived"), false))
       .collect();
+
+    return Promise.all(
+      boards.map(async (board) => {
+        const readState = await getBoardReadState(ctx, viewer._id, board._id);
+        const unreadPosts = await (typeof readState?.lastReadAt === "number"
+          ? ctx.db
+              .query("posts")
+              .withIndex("by_board_created_at", (q: any) =>
+                q.eq("boardId", board._id).gt("createdAt", readState.lastReadAt),
+              )
+              .collect()
+          : ctx.db.query("posts").withIndex("by_board_created_at", (q: any) => q.eq("boardId", board._id)).collect());
+
+        const visibleUnreadPosts = unreadPosts.filter((post: any) => !post.deletedAt);
+        const previewPosts = visibleUnreadPosts.slice(-3).reverse();
+        const unreadPreview = await Promise.all(
+          previewPosts.map(async (post: any) => {
+            const author = await ctx.db.get(post.authorId);
+            return {
+              _id: post._id,
+              body: post.body,
+              createdAt: post.createdAt,
+              authorName: author?.username ?? "Unknown user",
+            };
+          }),
+        );
+
+        return {
+          ...board,
+          unreadCount: visibleUnreadPosts.length,
+          unreadPreview,
+        };
+      }),
+    );
   },
 });
 
@@ -30,6 +65,31 @@ export const getById = query({
   handler: async (ctx, args) => {
     const viewer = await requireActiveViewer(ctx);
     return assertBoardAccess(ctx, viewer, args.boardId, "read");
+  },
+});
+
+export const markRead = mutation({
+  args: {
+    boardId: v.id("boards"),
+    postId: v.id("posts"),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await requireActiveViewer(ctx);
+    await assertBoardAccess(ctx, viewer, args.boardId, "read");
+
+    const post = await ctx.db.get(args.postId);
+    if (!post || post.boardId !== args.boardId) {
+      throw new Error("Post not found for this board.");
+    }
+
+    await recordBoardReadHead(ctx, {
+      boardId: args.boardId,
+      userId: viewer._id,
+      lastReadPostId: post._id,
+      lastReadAt: post.createdAt,
+    });
+
+    return { ok: true };
   },
 });
 

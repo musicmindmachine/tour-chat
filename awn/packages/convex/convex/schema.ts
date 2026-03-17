@@ -57,6 +57,16 @@ export default defineSchema({
     .index("by_board_user", ["boardId", "userId"])
     .index("by_user_board", ["userId", "boardId"]),
 
+  boardReads: defineTable({
+    boardId: v.id("boards"),
+    userId: v.id("users"),
+    lastReadPostId: v.id("posts"),
+    lastReadAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_board_user", ["boardId", "userId"])
+    .index("by_user_board", ["userId", "boardId"]),
+
   posts: defineTable({
     boardId: v.id("boards"),
     authorId: v.id("users"),
