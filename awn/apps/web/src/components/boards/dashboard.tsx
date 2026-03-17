@@ -26,7 +26,6 @@ export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
   const { signOut, user } = useAuth();
   const searchParams = useSearchParams();
   const viewer = useQuery(convexApi.users.current);
-  const boards = useQuery(convexApi.boards.list);
   const createBoard = useMutation(convexApi.boards.create);
   const syncCurrentUser = useMutation(convexApi.users.syncCurrentUser);
 
@@ -36,6 +35,8 @@ export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
   const [syncingUser, setSyncingUser] = useState(false);
 
   const inviteToken = searchParams.get("invite") ?? initialInviteToken;
+  const shouldLoadBoards = viewer?.status === "active";
+  const boards = useQuery(convexApi.boards.list, shouldLoadBoards ? {} : ("skip" as never));
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +66,7 @@ export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
     };
   }, [inviteToken, syncCurrentUser, syncingUser, user, viewer]);
 
-  if (viewer === undefined || boards === undefined) {
+  if (viewer === undefined) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   }
 
@@ -75,6 +76,37 @@ export function Dashboard({ inviteToken: initialInviteToken }: DashboardProps) {
 
   if (!viewer) {
     return null;
+  }
+
+  if (viewer.status !== "active") {
+    return (
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>@{viewer.username}</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{viewer.role}</Badge>
+                <Badge variant="outline">{viewer.status}</Badge>
+              </div>
+            </CardTitle>
+            <CardDescription>Invite-only message board network</CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">
+              Your account is pending admin approval before you can access message boards.
+            </div>
+            <Button variant="outline" onClick={() => signOut()}>
+              Sign out
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (boards === undefined) {
+    return <div className="p-6 text-sm text-muted-foreground">Loading boards…</div>;
   }
 
   const isAdmin = viewer.role === "admin";
