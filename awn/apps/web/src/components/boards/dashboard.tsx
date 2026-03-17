@@ -33,6 +33,14 @@ type BoardSummary = {
   }>;
 };
 
+function normalizeBoardSummary(board: Partial<BoardSummary> & { _id: string; name: string }) {
+  return {
+    ...board,
+    unreadCount: typeof board.unreadCount === "number" ? board.unreadCount : 0,
+    unreadPreview: Array.isArray(board.unreadPreview) ? board.unreadPreview : [],
+  };
+}
+
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-lg border border-border/80 bg-card/75 px-3 py-2">
@@ -111,7 +119,9 @@ export function Dashboard({ inviteToken }: DashboardProps) {
   }
 
   const isAdmin = viewer.role === "admin";
-  const boardList = (boards ?? []) as BoardSummary[];
+  const boardList = ((boards ?? []) as Array<Partial<BoardSummary> & { _id: string; name: string }>).map(
+    normalizeBoardSummary,
+  );
   const totalUnread = boardList.reduce((sum, board) => sum + board.unreadCount, 0);
 
   const onCreateBoard = async () => {
